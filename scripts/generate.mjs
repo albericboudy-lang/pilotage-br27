@@ -27,10 +27,16 @@ const WEB = join(ROOT, 'web');
 const DIST = join(ROOT, 'dist');
 const FIX = join(ROOT, 'fixtures');
 
-// Ordres canoniques — DOIVENT correspondre au front-end (web/app.js).
-const STATES = ['GT lancé', 'Travail en cours', 'Validation BR', 'Finalisation', 'Prêt', 'Annoncé'];
 const PILIERS = ['Prospérité', 'Ordre', 'Fierté'];
-const PRIORITES = ['Haute', 'Moyenne', 'Basse'];
+// États retirés de l'affichage (demande utilisateur). Le reste est lu DYNAMIQUEMENT depuis Notion.
+const HIDDEN_STATES = new Set(['GT lancé']);
+// Colonnes de documents exposées (« Documents de travail » EXCLU — interne, cf. CDC).
+const DOC_COLUMNS = [
+  { key: 'livret', prop: 'Livret', label: 'Livret' },
+  { key: 'tract', prop: 'Tract', label: 'Tract' },
+  { key: 'retombees', prop: 'Retombées Presse', label: 'Retombées presse' },
+  { key: 'autres', prop: 'Autres supports de présentation', label: 'Autres' },
+];
 
 const SALT = webcrypto.getRandomValues(new Uint8Array(KDF.saltBytes)); // sel aléatoire par build
 
@@ -111,6 +117,14 @@ async function withRetry(fn, { tries = 4, base = 600, label = '' } = {}) {
 async function readLive() {
   const notion = new Client({ auth: NOTION_TOKEN });
   log(`→ Lecture Notion (data source ${DATA_SOURCE_ID})`);
+
+  // 1) Schéma : ordre RÉEL des états d'avancement (lecture dynamique → robuste aux changements).
+  const ds = await withRetry(() => notion.dataSources.retrieve({ data_source_id: DATA_SOURCE_ID }), { label: 'schéma' });
+  const etatProp = ds.properties?.["État d'avancement"];
+  const states = (etatProp?.select?.options || []).map((o) => o.name).filter((s) => !HIDDEN_STATES.has(s));
+  log(`  états : ${states.join(' · ')}`);
+
+  // 2) Lignes (paginées).
   const rows = [];
   let cursor;
   do {
@@ -125,43 +139,33 @@ async function readLive() {
   const titleKeyOf = (props) =>
     'Chantier' in props ? 'Chantier' : Object.keys(props).find((k) => props[k].type === 'title');
 
-  return rows.map((page) => {
+  const chantiers = rows.map((page) => {
     const props = page.properties;
     return {
       id: page.id,
-      ref: readProp(props, 'Réf'),
       chantier: readProp(props, titleKeyOf(props)) || '(Sans titre)',
       pilier: inList(readProp(props, 'Pilier'), PILIERS),
-      etat: inList(readProp(props, "État d'avancement"), STATES),
-      priorite: inList(readProp(props, 'Priorité'), PRIORITES),
-      pilote: readProp(props, 'Pilote'),
-      echeance: readProp(props, 'Échéance'),
+      etat: readProp(props, "État d'avancement"),
       dateAnnonce: readProp(props, "Date d'annonce"),
-      synthese: readProp(props, 'Synthèse'),
       prochaineEtape: readProp(props, 'Prochaine étape'),
-      aProduire: readProp(props, 'À produire') || [],
-      _files: {
-        livret: fileEntries(readProp(props, 'Livret')),
-        tract: fileEntries(readProp(props, 'Tract')),
-        autres: fileEntries(readProp(props, 'Autres livrables')),
-        // « Documents de travail » : volontairement NON LU (interne — CDC §5.4 / §9).
-      },
+      aProduire: readProp(props, 'To do') || readProp(props, 'À produire') || [],
+      // Fichiers par colonne (« Documents de travail » volontairement NON LU — interne, CDC §5.4/§9).
+      _files: Object.fromEntries(DOC_COLUMNS.map((c) => [c.key, fileEntries(readProp(props, c.prop))])),
     };
   });
+  return { states, chantiers };
 }
 
 function readFixtureData() {
   log('→ Mode DÉMONSTRATION (fixtures/chantiers.json)');
   const data = JSON.parse(readFileSync(join(FIX, 'chantiers.json'), 'utf8'));
-  return data.chantiers.map((c) => ({
+  const chantiers = data.chantiers.map((c) => ({
     ...c,
     aProduire: c.aProduire || [],
-    _files: {
-      livret: (c.documents?.livret || []).map((d) => ({ name: d.name, mime: d.mime, path: d.path })),
-      tract: (c.documents?.tract || []).map((d) => ({ name: d.name, mime: d.mime, path: d.path })),
-      autres: (c.documents?.autres || []).map((d) => ({ name: d.name, mime: d.mime, path: d.path })),
-    },
+    _files: Object.fromEntries(DOC_COLUMNS.map((col) =>
+      [col.key, (c.documents?.[col.key] || []).map((d) => ({ name: d.name, mime: d.mime, path: d.path }))])),
   }));
+  return { states: data.states, chantiers };
 }
 
 // ---------- récupération des octets d'un fichier ----------
@@ -185,7 +189,7 @@ async function main() {
   const t0 = Date.now();
   const key = deriveKey(SITE_PASSWORD, Buffer.from(SALT));
 
-  const chantiers = FIXTURE ? readFixtureData() : await readLive();
+  const { states, chantiers } = FIXTURE ? readFixtureData() : await readLive();
 
   // Prépare dist/ : site statique + dossier des fichiers chiffrés.
   rmSync(DIST, { recursive: true, force: true });
@@ -223,11 +227,8 @@ async function main() {
 
   const publicChantiers = [];
   for (const c of chantiers) {
-    const documents = {
-      livret: await processSlot(c._files.livret),
-      tract: await processSlot(c._files.tract),
-      autres: await processSlot(c._files.autres),
-    };
+    const documents = {};
+    for (const col of DOC_COLUMNS) documents[col.key] = await processSlot(c._files[col.key] || []);
     const { _files, documents: _d, ...rest } = c;
     publicChantiers.push({ ...rest, documents });
   }
@@ -235,12 +236,12 @@ async function main() {
   // Charge utile chiffrée (tout le contenu lisible vit ici).
   const generatedAt = new Date().toISOString();
   const payload = {
-    version: 1,
+    version: 2,
     generatedAt,
     source: FIXTURE ? 'fixture' : 'live',
-    states: STATES,
+    states,                                                  // ordre réel des états (dynamique)
     piliers: PILIERS,
-    priorites: PRIORITES,
+    docColumns: DOC_COLUMNS.map((c) => ({ key: c.key, label: c.label })),
     chantiers: publicChantiers,
   };
   writeFileSync(join(DIST, 'data.enc'), encryptJSON(key, payload));
@@ -258,7 +259,7 @@ async function main() {
   writeFileSync(join(DIST, 'manifest.json'), JSON.stringify(manifest));
 
   // Résumé console (non publié).
-  const byState = Object.fromEntries(STATES.map((s) => [s, publicChantiers.filter((c) => c.etat === s).length]));
+  const byState = Object.fromEntries(states.map((s) => [s, publicChantiers.filter((c) => c.etat === s).length]));
   log('\n✔ Build terminé en', ((Date.now() - t0) / 1000).toFixed(1) + 's');
   log('  mode        :', FIXTURE ? 'démonstration' : 'live Notion');
   log('  chantiers   :', publicChantiers.length, JSON.stringify(byState));

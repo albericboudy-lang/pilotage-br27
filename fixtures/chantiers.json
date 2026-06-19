@@ -1,150 +1,105 @@
 {
-  "_comment": "Données de DÉMONSTRATION (fictives) pour développer et tester sans accès Notion. En production, generate.mjs lit la vraie base Notion. Chaque document pointe vers un fichier local sous fixtures/.",
+  "_comment": "Données de DÉMONSTRATION (fictives) pour développer/tester sans accès Notion. En production, generate.mjs lit la vraie base Notion (états et colonnes lus dynamiquement).",
   "source": "fixture",
+  "states": ["Travail en cours", "Première revue BR", "Validation BR", "Finalisation", "Prêt", "Lancé"],
   "chantiers": [
     {
-      "id": "demo-fiscalite-travail",
-      "ref": "CH-1",
-      "chantier": "Fiscalité du travail",
+      "id": "demo-travail",
+      "chantier": "Travail gagnant",
       "pilier": "Prospérité",
-      "etat": "Finalisation",
-      "priorite": "Haute",
-      "pilote": "Équipe Prospérité",
-      "echeance": "2026-07-15",
-      "dateAnnonce": null,
-      "synthese": "Baisse ciblée des prélèvements sur le travail et simplification des tranches, pour restaurer la valeur travail et le pouvoir d'achat des classes moyennes.",
-      "prochaineEtape": "Derniers arbitrages de chiffrage avant transmission pour validation.",
+      "etat": "Lancé",
+      "dateAnnonce": "2026-01-07",
+      "prochaineEtape": "Décliner en supports de campagne.",
       "aProduire": ["Livret", "Tract"],
       "documents": {
-        "livret": [{ "name": "Livret — Fiscalité du travail.pdf", "mime": "application/pdf", "path": "files/livret-fiscalite-travail.pdf" }],
-        "tract": [],
+        "livret": [{ "name": "Livret — Travail gagnant.pdf", "mime": "application/pdf", "path": "files/livret-fiscalite-travail.pdf" }],
+        "tract": [{ "name": "Tract — Travail gagnant.pdf", "mime": "application/pdf", "path": "files/tract-securite-quotidien.pdf" }],
+        "retombees": [{ "name": "Retombées presse — Travail gagnant.pdf", "mime": "application/pdf", "path": "files/note-annexe-fierte.pdf" }],
         "autres": []
       }
     },
     {
-      "id": "demo-souverainete-industrielle",
-      "ref": "CH-2",
-      "chantier": "Souveraineté industrielle & énergie",
+      "id": "demo-agriculture",
+      "chantier": "Agriculture",
       "pilier": "Prospérité",
-      "etat": "Travail en cours",
-      "priorite": "Haute",
-      "pilote": "Groupe de travail Industrie",
-      "echeance": "2026-09-30",
-      "dateAnnonce": null,
-      "synthese": "Reconquête productive : relocalisation des filières stratégiques, relance du nucléaire et sécurisation de l'approvisionnement énergétique.",
-      "prochaineEtape": "Auditions des fédérations professionnelles en juillet.",
-      "aProduire": ["Livret", "Note"],
+      "etat": "Lancé",
+      "dateAnnonce": "2026-02-24",
+      "prochaineEtape": "Suivi de terrain.",
+      "aProduire": ["Livret", "Tract"],
       "documents": {
-        "livret": [{ "name": "Livret — Souveraineté industrielle.pdf", "mime": "application/pdf", "path": "files/livret-souverainete.pdf" }],
-        "tract": [],
+        "livret": [{ "name": "Livret — Agriculture.pdf", "mime": "application/pdf", "path": "files/livret-souverainete.pdf" }],
+        "tract": [{ "name": "Tract — Agriculture.pdf", "mime": "application/pdf", "path": "files/tract-securite-quotidien.pdf" }],
+        "retombees": [],
         "autres": []
       }
     },
     {
-      "id": "demo-securite-quotidien",
-      "ref": "CH-3",
+      "id": "demo-electricite",
+      "chantier": "Électricité",
+      "pilier": "Prospérité",
+      "etat": "Prêt",
+      "dateAnnonce": null,
+      "prochaineEtape": "En réserve — prêt à être annoncé.",
+      "aProduire": ["Livret", "Tract"],
+      "documents": {
+        "livret": [{ "name": "Livret — Électricité.pdf", "mime": "application/pdf", "path": "files/livret-souverainete.pdf" }],
+        "tract": [],
+        "retombees": [],
+        "autres": []
+      }
+    },
+    {
+      "id": "demo-education",
+      "chantier": "Éducation",
+      "pilier": "Fierté",
+      "etat": "Validation BR",
+      "dateAnnonce": null,
+      "prochaineEtape": "Passage en réunion de validation avec Bruno Retailleau.",
+      "aProduire": ["Livret", "EDL"],
+      "documents": { "livret": [], "tract": [], "retombees": [], "autres": [] }
+    },
+    {
+      "id": "demo-culture",
+      "chantier": "Culture",
+      "pilier": "Fierté",
+      "etat": "Première revue BR",
+      "dateAnnonce": null,
+      "prochaineEtape": "Préparer la première revue avec BR.",
+      "aProduire": ["Note", "Discours"],
+      "documents": { "livret": [], "tract": [], "retombees": [], "autres": [{ "name": "Note de cadrage — Culture.pdf", "mime": "application/pdf", "path": "files/note-annexe-fierte.pdf" }] }
+    },
+    {
+      "id": "demo-securite",
       "chantier": "Sécurité du quotidien",
       "pilier": "Ordre",
-      "etat": "Prêt",
-      "priorite": "Haute",
-      "pilote": "Groupe de travail Sécurité",
-      "echeance": "2026-06-10",
+      "etat": "Travail en cours",
       "dateAnnonce": null,
-      "synthese": "Réarmer l'autorité républicaine : présence policière de terrain, réponse pénale ferme et lutte contre les zones de non-droit.",
-      "prochaineEtape": "En réserve — prêt à être annoncé selon le calendrier de campagne.",
-      "aProduire": ["Tract", "Discours"],
-      "documents": {
-        "livret": [],
-        "tract": [{ "name": "Tract — Sécurité du quotidien.pdf", "mime": "application/pdf", "path": "files/tract-securite-quotidien.pdf" }],
-        "autres": []
-      }
+      "prochaineEtape": "Auditions en cours.",
+      "aProduire": ["Livret", "EDL"],
+      "documents": { "livret": [], "tract": [], "retombees": [], "autres": [] }
     },
     {
-      "id": "demo-immigration-integration",
-      "ref": "CH-4",
+      "id": "demo-immigration",
       "chantier": "Maîtrise de l'immigration",
       "pilier": "Ordre",
-      "etat": "Validation BR",
-      "priorite": "Haute",
-      "pilote": "Cellule régalienne",
-      "echeance": "2026-07-01",
-      "dateAnnonce": null,
-      "synthese": "Réduction des flux, conditionnalité de l'aide au développement et refonte du droit d'asile pour une intégration exigeante.",
-      "prochaineEtape": "Passage en réunion de validation avec Bruno Retailleau le 24 juin.",
-      "aProduire": ["Livret", "EDL"],
-      "documents": {
-        "livret": [],
-        "tract": [],
-        "autres": []
-      }
-    },
-    {
-      "id": "demo-transmission-memoire",
-      "ref": "CH-5",
-      "chantier": "Transmission, école & mémoire",
-      "pilier": "Fierté",
       "etat": "Travail en cours",
-      "priorite": "Moyenne",
-      "pilote": "Groupe de travail Éducation",
-      "echeance": "2026-10-15",
       "dateAnnonce": null,
-      "synthese": "Restaurer l'autorité du savoir : exigence scolaire, transmission du roman national et défense du patrimoine.",
-      "prochaineEtape": "Rédaction du premier jet de livret en cours.",
-      "aProduire": ["Livret", "Note", "Discours"],
-      "documents": {
-        "livret": [],
-        "tract": [],
-        "autres": [{ "name": "Note — Transmission & mémoire.pdf", "mime": "application/pdf", "path": "files/note-annexe-fierte.pdf" }]
-      }
+      "prochaineEtape": "Rédaction du premier jet.",
+      "aProduire": ["Livret", "Note"],
+      "documents": { "livret": [], "tract": [], "retombees": [], "autres": [] }
     },
     {
-      "id": "demo-ruralite-territoires",
-      "ref": "CH-6",
-      "chantier": "Ruralité & équilibre des territoires",
+      "id": "demo-famille",
+      "chantier": "Famille",
       "pilier": "Fierté",
-      "etat": "GT lancé",
-      "priorite": "Moyenne",
-      "pilote": "À désigner",
-      "echeance": "2026-11-30",
+      "etat": "Finalisation",
       "dateAnnonce": null,
-      "synthese": "Reconnaître la France des territoires : services publics de proximité, mobilité et soutien au monde agricole.",
-      "prochaineEtape": "Constitution du groupe de travail et désignation du pilote.",
-      "aProduire": ["EDL", "Lettre"],
-      "documents": { "livret": [], "tract": [], "autres": [] }
-    },
-    {
-      "id": "demo-pouvoir-achat",
-      "ref": "CH-7",
-      "chantier": "Pouvoir d'achat & énergie des ménages",
-      "pilier": "Prospérité",
-      "etat": "Annoncé",
-      "priorite": "Haute",
-      "pilote": "Équipe Prospérité",
-      "echeance": null,
-      "dateAnnonce": "2026-05-20",
-      "synthese": "Baisse des taxes sur l'énergie et indexation du barème : un cap clair pour le pouvoir d'achat, présenté publiquement.",
-      "prochaineEtape": "Décliner en propositions de loi et en supports de campagne.",
-      "aProduire": ["Livret", "Tract", "Visuel"],
+      "prochaineEtape": "Derniers arbitrages avant transmission.",
+      "aProduire": ["Livret", "Tract"],
       "documents": {
-        "livret": [{ "name": "Livret — Fiscalité du travail.pdf", "mime": "application/pdf", "path": "files/livret-fiscalite-travail.pdf" }],
-        "tract": [{ "name": "Tract — Sécurité du quotidien.pdf", "mime": "application/pdf", "path": "files/tract-securite-quotidien.pdf" }],
-        "autres": []
+        "livret": [{ "name": "Livret — Famille.pdf", "mime": "application/pdf", "path": "files/note-annexe-fierte.pdf" }],
+        "tract": [], "retombees": [], "autres": []
       }
-    },
-    {
-      "id": "demo-justice-fermete",
-      "ref": "CH-8",
-      "chantier": "Justice & fermeté pénale",
-      "pilier": "Ordre",
-      "etat": "Annoncé",
-      "priorite": "Moyenne",
-      "pilote": "Cellule régalienne",
-      "echeance": null,
-      "dateAnnonce": "2026-04-08",
-      "synthese": "Peines effectivement exécutées, construction de places de prison et restauration de la chaîne pénale.",
-      "prochaineEtape": "Suivi médiatique et argumentaire de terrain.",
-      "aProduire": ["Discours", "Tract"],
-      "documents": { "livret": [], "tract": [], "autres": [] }
     }
   ]
 }

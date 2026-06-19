@@ -4,18 +4,22 @@
 
 'use strict';
 
-/* ---------- Constantes (miroir de scripts/generate.mjs) ---------- */
-const STATES = ['GT lancé', 'Travail en cours', 'Validation BR', 'Finalisation', 'Prêt', 'Annoncé'];
+/* ---------- Constantes ---------- */
+// Les états et les colonnes de documents sont lus DYNAMIQUEMENT depuis les données
+// (eux-mêmes lus depuis Notion par generate.mjs) — robustes aux changements de schéma.
 const PILIERS = ['Prospérité', 'Ordre', 'Fierté'];
-const PRIORITES = ['Haute', 'Moyenne', 'Basse'];
-const STATE_VAR = { 'GT lancé': '--s-gt', 'Travail en cours': '--s-cours', 'Validation BR': '--s-valid', 'Finalisation': '--s-final', 'Prêt': '--s-pret', 'Annoncé': '--s-annonce' };
-// Libellé d'affichage : « Annoncé » s'affiche « Lancé » (la valeur Notion reste « Annoncé »).
+// Couleur d'un état (connu → jeton dédié ; inconnu → neutre).
+const STATE_VAR = {
+  'Travail en cours': '--s-cours', 'Première revue BR': '--s-gt', 'Validation BR': '--s-valid',
+  'Finalisation': '--s-final', 'Prêt': '--s-pret', 'Annoncé': '--s-annonce', 'Lancé': '--s-annonce',
+};
+const stateVar = (e) => STATE_VAR[e] || '--ink-3';
+// Affichage : « Annoncé » montré « Lancé » tant que l'option n'est pas renommée dans Notion.
 const ETAT_LABEL = { 'Annoncé': 'Lancé' };
 const etatLabel = (e) => ETAT_LABEL[e] || e || 'Non classé';
-// Ordre d'affichage : du plus avancé au moins avancé (Lancé en tête).
-const STATES_DISPLAY = ['Annoncé', 'Prêt', 'Finalisation', 'Validation BR', 'Travail en cours', 'GT lancé'];
+const getStates = () => state.data?.states || [];
+const statesDisplay = () => [...getStates()].reverse(); // du plus avancé au moins avancé
 const PILIER_VAR = { 'Prospérité': '--p-prosperite', 'Ordre': '--p-ordre', 'Fierté': '--p-fierte' };
-const PRIORITE_VAR = { 'Haute': '--urgent', 'Moyenne': '--soon', 'Basse': '--s-gt' };
 const IV_BYTES = 12;
 
 /* ---------- État applicatif ---------- */
@@ -138,7 +142,7 @@ function renderUpdated() {
 
 /* ---------- Rendu : indicateurs (KPI) ---------- */
 function countsByState() {
-  const c = Object.fromEntries(STATES.map((s) => [s, 0]));
+  const c = Object.fromEntries(getStates().map((s) => [s, 0]));
   for (const ch of state.data.chantiers) if (c[ch.etat] != null) c[ch.etat]++;
   return c;
 }
@@ -154,9 +158,9 @@ function renderKpis() {
   wrap.append(t);
 
   // Un indicateur par état (du plus avancé au moins avancé), cliquable = filtre
-  STATES_DISPLAY.forEach((s) => {
+  statesDisplay().forEach((s) => {
     const k = el('button', 'kpi', { type: 'button', 'data-etat': s, 'aria-pressed': state.filters.etats.has(s) ? 'true' : 'false' });
-    setCssVar(k, STATE_VAR[s]);
+    setCssVar(k, stateVar(s));
     k.innerHTML = `<span class="kpi__n">${counts[s]}</span><span class="kpi__label"><span class="kpi__dot"></span>${etatLabel(s)}</span>`;
     k.addEventListener('click', () => toggleFilter('etats', s));
     wrap.append(k);
@@ -179,7 +183,6 @@ function makeChipGroup(label, dim, values, varMap) {
 function renderFilters() {
   const groups = $('#filter-groups'); groups.innerHTML = '';
   groups.append(makeChipGroup('Pilier', 'piliers', PILIERS, PILIER_VAR));
-  groups.append(makeChipGroup('Priorité', 'priorites', PRIORITES, PRIORITE_VAR));
   $('#clear').addEventListener('click', clearFilters);
 }
 function toggleFilter(dim, value) {
@@ -188,18 +191,15 @@ function toggleFilter(dim, value) {
   syncFilterControls(); render();
 }
 function clearFilters() {
-  state.filters.etats.clear(); state.filters.piliers.clear(); state.filters.priorites.clear();
+  state.filters.etats.clear(); state.filters.piliers.clear();
   state.query = ''; $('#search').value = '';
   syncFilterControls(); render();
 }
 function syncFilterControls() {
   $('#kpis').querySelectorAll('.kpi[data-etat]').forEach((k) => k.setAttribute('aria-pressed', state.filters.etats.has(k.dataset.etat) ? 'true' : 'false'));
-  $('#filter-groups').querySelectorAll('.fgroup').forEach((g) => {
-    const dim = g.querySelector('.fgroup__label').textContent === 'Pilier' ? 'piliers' : 'priorites';
-    g.querySelectorAll('.chip').forEach((chip) => {
-      const v = chip.querySelector('span:last-child').textContent;
-      chip.setAttribute('aria-pressed', state.filters[dim].has(v) ? 'true' : 'false');
-    });
+  $('#filter-groups').querySelectorAll('.fgroup .chip').forEach((chip) => {
+    const v = chip.querySelector('span:last-child').textContent;
+    chip.setAttribute('aria-pressed', state.filters.piliers.has(v) ? 'true' : 'false');
   });
   renderActiveChips();
 }
@@ -215,10 +215,9 @@ function renderActiveChips() {
     x.addEventListener('click', () => toggleFilter(dim, value));
     a.append(x); wrap.append(a);
   };
-  state.filters.etats.forEach((v) => add('etats', v, STATE_VAR[v], etatLabel(v)));
+  state.filters.etats.forEach((v) => add('etats', v, stateVar(v), etatLabel(v)));
   state.filters.piliers.forEach((v) => add('piliers', v, PILIER_VAR[v]));
-  state.filters.priorites.forEach((v) => add('priorites', v, PRIORITE_VAR[v]));
-  const any = state.filters.etats.size || state.filters.piliers.size || state.filters.priorites.size || state.query;
+  const any = state.filters.etats.size || state.filters.piliers.size || state.query;
   $('#clear').hidden = !any;
 }
 
@@ -227,10 +226,9 @@ function matches(ch) {
   const f = state.filters;
   if (f.etats.size && !f.etats.has(ch.etat)) return false;
   if (f.piliers.size && !f.piliers.has(ch.pilier)) return false;
-  if (f.priorites.size && !f.priorites.has(ch.priorite)) return false;
   if (state.query) {
     const q = deburr(state.query);
-    if (!deburr(ch.chantier).includes(q) && !deburr(ch.synthese).includes(q) && !deburr(ch.pilote).includes(q)) return false;
+    if (!deburr(ch.chantier).includes(q) && !deburr(ch.prochaineEtape).includes(q)) return false;
   }
   return true;
 }
@@ -248,9 +246,10 @@ function echeanceClass(ch) {
 
 /* ---------- Rail signature ---------- */
 function railHTML(etat) {
-  const idx = STATES.indexOf(etat);
+  const states = getStates();
+  const idx = states.indexOf(etat);
   let segs = '';
-  for (let i = 0; i < STATES.length; i++) {
+  for (let i = 0; i < states.length; i++) {
     const cls = idx < 0 ? '' : i < idx ? 'is-on' : i === idx ? 'is-on is-cur' : '';
     segs += `<span class="rail__seg ${cls}"></span>`;
   }
@@ -258,20 +257,20 @@ function railHTML(etat) {
 }
 
 /* ---------- Tri ---------- */
-const stIdx = (e) => { const i = STATES.indexOf(e); return i < 0 ? -1 : i; }; // GT lancé=0 … Annoncé=5
+const stIdx = (e) => { const i = getStates().indexOf(e); return i < 0 ? -1 : i; }; // ordre workflow
 const byStr = (a, b) => (a || '').localeCompare(b || '', 'fr', { sensitivity: 'base' });
 const SORTS = {
   chantier: (a, b) => byStr(a.chantier, b.chantier),
   etat: (a, b) => (stIdx(a.etat) - stIdx(b.etat)) || byStr(a.chantier, b.chantier),
 };
-// Colonnes calquées sur le tableau Notion (les colonnes documents sont séparées).
-const COLUMNS = [
-  { key: 'chantier', label: 'Chantier', sortable: true },
-  { key: 'etat', label: 'Avancement', sortable: true },
-  { key: 'livret', label: 'Livret', sortable: false, doc: 'livret' },
-  { key: 'tract', label: 'Tract', sortable: false, doc: 'tract' },
-  { key: 'autres', label: 'Autres', sortable: false, doc: 'autres' },
-];
+// Colonnes : Chantier + Avancement + les colonnes documents (lues dynamiquement).
+function buildColumns() {
+  return [
+    { key: 'chantier', label: 'Chantier', sortable: true },
+    { key: 'etat', label: 'Avancement', sortable: true },
+    ...(state.data.docColumns || []).map((c) => ({ key: c.key, label: c.label, sortable: false, doc: c.key })),
+  ];
+}
 
 /* ---------- Rendu : liste ---------- */
 function render() {
@@ -280,7 +279,7 @@ function render() {
 
   if (visible.length === 0) {
     board.classList.add('is-empty');
-    const filtresActifs = state.filters.etats.size || state.filters.piliers.size || state.filters.priorites.size || state.query;
+    const filtresActifs = state.filters.etats.size || state.filters.piliers.size || state.query;
     const e = el('div', 'empty');
     if (state.data.chantiers.length === 0) {
       e.innerHTML = `<h3>Aucun chantier pour l’instant</h3><p>La base ne contient encore aucun chantier. Dès qu’un chantier est saisi dans Notion, il apparaîtra ici à la prochaine régénération.</p>`;
@@ -300,9 +299,12 @@ function render() {
   const cmp = SORTS[state.sort.key] || SORTS.etat;
   visible = [...visible].sort((a, b) => cmp(a, b) * state.sort.dir);
 
+  const columns = buildColumns();
+  const docCount = columns.filter((c) => c.doc).length;
   const table = el('div', 'list', { role: 'table', 'aria-label': 'Liste des chantiers' });
+  table.style.setProperty('--lcols', 'minmax(220px,2.2fr) minmax(150px,1.3fr) ' + Array(docCount).fill('minmax(120px,.9fr)').join(' '));
   const head = el('div', 'list__head', { role: 'row' });
-  COLUMNS.forEach((col) => {
+  columns.forEach((col) => {
     const active = state.sort.key === col.key;
     const cls = `lh lcell--${col.key}${active ? ' is-active is-' + (state.sort.dir === 1 ? 'asc' : 'desc') : ''}`;
     const cell = el(col.sortable ? 'button' : 'div', cls, { role: 'columnheader' });
@@ -331,22 +333,21 @@ function docCellHTML(files) {
 }
 function rowEl(ch) {
   const row = el('div', 'lrow', { role: 'row' });
-  const sv = STATE_VAR[ch.etat] || '--ink-3';
+  const sv = stateVar(ch.etat);
 
   const c1 = el('div', 'lcell lcell--chantier', { role: 'cell' });
-  const aria = `Ouvrir ${ch.chantier}${ch.ref ? ', ' + ch.ref : ''} — ${etatLabel(ch.etat)}`;
+  const aria = `Ouvrir ${ch.chantier} — ${etatLabel(ch.etat)}`;
   const btn = el('button', 'lrow__open', { type: 'button', 'aria-label': aria });
-  btn.innerHTML = `<span class="lrow__title">${escapeHtml(ch.chantier)}</span><span class="lrow__sub">${ch.pilier ? `<span class="pastille" style="--c:var(${PILIER_VAR[ch.pilier]})">${ch.pilier}</span>` : ''}${ch.ref ? `<span class="lrow__ref">${ch.ref}</span>` : ''}</span>`;
+  btn.innerHTML = `<span class="lrow__title">${escapeHtml(ch.chantier)}</span><span class="lrow__sub">${ch.pilier ? `<span class="pastille" style="--c:var(${PILIER_VAR[ch.pilier]})">${ch.pilier}</span>` : ''}</span>`;
   c1.append(btn);
 
   const c2 = el('div', 'lcell lcell--etat', { role: 'cell', 'data-label': 'Avancement' });
   c2.innerHTML = `<span class="etatpill" style="--c:var(${sv})"><span class="etatpill__dot"></span>${etatLabel(ch.etat)}</span><span class="rail" style="--c:var(${sv})" aria-hidden="true">${railHTML(ch.etat)}</span>`;
 
   const cells = [c1, c2];
-  for (const col of COLUMNS) {
-    if (!col.doc) continue;
+  for (const col of (state.data.docColumns || [])) {
     const cell = el('div', `lcell lcell--doc lcell--${col.key}`, { role: 'cell', 'data-label': col.label });
-    cell.innerHTML = docCellHTML(ch.documents?.[col.doc]);
+    cell.innerHTML = docCellHTML(ch.documents?.[col.key]);
     cell.querySelectorAll('.docchip').forEach((b) => b.addEventListener('click', (e) => { e.stopPropagation(); downloadDoc(b); }));
     cells.push(cell);
   }
@@ -365,14 +366,12 @@ const detail = $('#detail'), scrim = $('#scrim');
 function row(dt, dd, cls) { return `<dt>${dt}</dt><dd class="${cls || ''}">${dd}</dd>`; }
 function openDetail(ch, trigger) {
   state.lastFocus = trigger;
-  const ecl = echeanceClass(ch);
   const docs = renderDocs(ch);
   detail.innerHTML = `
     <div class="detail__head">
       <div class="detail__heading">
         <div class="detail__eyebrow">
           ${ch.pilier ? `<span class="pastille" style="--c:var(${PILIER_VAR[ch.pilier]})">${ch.pilier}</span>` : ''}
-          ${ch.ref ? `<span class="detail__ref">${ch.ref}</span>` : ''}
         </div>
         <h2 class="detail__title" id="detail-title">${escapeHtml(ch.chantier)}</h2>
       </div>
@@ -381,15 +380,9 @@ function openDetail(ch, trigger) {
     <div class="detail__body">
       <div>
         <div class="dsection__label">État d’avancement — ${etatLabel(ch.etat)}</div>
-        <div class="rail detail__rail" style="--c:var(${STATE_VAR[ch.etat] || '--ink-3'})" aria-hidden="true">${railHTML(ch.etat)}</div>
+        <div class="rail detail__rail" style="--c:var(${stateVar(ch.etat)})" aria-hidden="true">${railHTML(ch.etat)}</div>
       </div>
-      <dl class="dgrid">
-        ${row('Priorité', ch.priorite || '—')}
-        ${row('Pilote', escapeHtml(ch.pilote) || '—')}
-        ${row('Échéance', ch.echeance ? fmtDate(ch.echeance) + (ecl === 'is-urgent' ? ' · en retard' : ecl === 'is-soon' ? ' · bientôt' : '') : '—', ecl)}
-        ${row('Date d’annonce', ch.dateAnnonce ? fmtDate(ch.dateAnnonce) : '—')}
-      </dl>
-      ${ch.synthese ? `<div class="dsection"><div class="dsection__label">Synthèse</div><p class="dsection__text">${escapeHtml(ch.synthese)}</p></div>` : ''}
+      ${ch.dateAnnonce ? `<dl class="dgrid">${row('Date d’annonce', fmtDate(ch.dateAnnonce))}</dl>` : ''}
       ${ch.prochaineEtape ? `<div class="dsection"><div class="dsection__label">Prochaine étape</div><p class="dsection__text">${escapeHtml(ch.prochaineEtape)}</p></div>` : ''}
       ${ch.aProduire?.length ? `<div class="dsection"><div class="dsection__label">À produire</div><div class="produire">${ch.aProduire.map(tagHTML).join('')}</div></div>` : ''}
       <div class="dsection"><div class="dsection__label">Documents</div>${docs}</div>
@@ -407,13 +400,13 @@ function openDetail(ch, trigger) {
   scrim.addEventListener('click', closeDetail, { once: true });
 }
 function renderDocs(ch) {
-  const groups = [['Livret', ch.documents?.livret], ['Tract', ch.documents?.tract], ['Autre', ch.documents?.autres]];
-  const all = groups.flatMap(([label, arr]) => (arr || []).map((d) => ({ ...d, label })));
+  const cols = state.data.docColumns || [];
+  const all = cols.flatMap((col) => (ch.documents?.[col.key] || []).map((d) => ({ ...d, label: col.label })));
   if (!all.length) return `<p class="docs__empty">Aucun document pour l’instant.</p>`;
   return `<div class="docs">${all.map((d) => `
     <button class="docbtn" type="button" data-id="${d.id}" data-name="${escapeHtml(d.name)}" data-mime="${d.mime}" aria-label="Télécharger ${escapeHtml(d.name)}">
       <span class="docbtn__ic">${icon('file')}</span>
-      <span class="docbtn__main"><span class="docbtn__name">${DOC_VERB[d.label] || 'Télécharger le document'}</span><span class="docbtn__meta">${escapeHtml(d.name)}${d.size ? ' · ' + fmtSize(d.size) : ''}</span></span>
+      <span class="docbtn__main"><span class="docbtn__name">Télécharger — ${escapeHtml(d.label)}</span><span class="docbtn__meta">${escapeHtml(d.name)}${d.size ? ' · ' + fmtSize(d.size) : ''}</span></span>
       <span class="docbtn__dl">${icon('download')}</span>
     </button>`).join('')}</div>`;
 }
