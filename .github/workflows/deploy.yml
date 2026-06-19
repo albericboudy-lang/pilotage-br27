@@ -1,0 +1,52 @@
+name: Régénérer & publier le pilotage
+
+# Régénère le site (lecture Notion → chiffrement → build) et le publie sur
+# GitHub Pages. Déclenchements : horaire (cron), manuel, et à chaque push sur main.
+on:
+  schedule:
+    - cron: '0 * * * *'        # toutes les heures (UTC ; peut dériver de quelques minutes selon la charge GitHub)
+  workflow_dispatch:           # déclenchement manuel (onglet Actions → Run workflow)
+  push:
+    branches: [main]
+
+# Permissions minimales nécessaires au déploiement Pages.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Une seule publication à la fois ; ne pas annuler un déploiement en cours.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Générer le site (Notion → chiffré)
+        env:
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+          NOTION_DATA_SOURCE_ID: ${{ secrets.NOTION_DATA_SOURCE_ID }}
+          SITE_PASSWORD: ${{ secrets.SITE_PASSWORD }}
+        run: node scripts/generate.mjs
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
