@@ -18,6 +18,7 @@ const state = {
   manifest: null, key: null, pw: null, data: null,
   filters: { etats: new Set(), piliers: new Set(), priorites: new Set() },
   query: '',
+  sort: { key: 'etat', dir: 1 }, // tri de la liste (état, par défaut)
   lastFocus: null, // élément ayant ouvert le slide-over
 };
 
@@ -255,10 +256,31 @@ function railHTML(etat) {
   return segs;
 }
 
-/* ---------- Rendu : board ---------- */
+/* ---------- Tri ---------- */
+const stIdx = (e) => { const i = STATES.indexOf(e); return i < 0 ? 99 : i; };
+const prIdx = (p) => { const i = PRIORITES.indexOf(p); return i < 0 ? 99 : i; };
+const byStr = (a, b) => (a || '').localeCompare(b || '', 'fr', { sensitivity: 'base' });
+const SORTS = {
+  chantier: (a, b) => byStr(a.chantier, b.chantier),
+  etat: (a, b) => (stIdx(a.etat) - stIdx(b.etat)) || (prIdx(a.priorite) - prIdx(b.priorite)) || byStr(a.chantier, b.chantier),
+  priorite: (a, b) => (prIdx(a.priorite) - prIdx(b.priorite)) || (stIdx(a.etat) - stIdx(b.etat)) || byStr(a.chantier, b.chantier),
+  pilote: (a, b) => byStr(a.pilote, b.pilote) || byStr(a.chantier, b.chantier),
+  echeance: (a, b) => byStr(a.echeance || '9999-99-99', b.echeance || '9999-99-99'),
+};
+const COLUMNS = [
+  { key: 'chantier', label: 'Chantier', sortable: true },
+  { key: 'etat', label: 'Avancement', sortable: true },
+  { key: 'priorite', label: 'Priorité', sortable: true },
+  { key: 'pilote', label: 'Pilote', sortable: true },
+  { key: 'echeance', label: 'Échéance', sortable: true },
+  { key: 'documents', label: 'Documents', sortable: false },
+];
+const DOC_SHORT = { Livret: 'Livret', Tract: 'Tract', Autre: 'Document' };
+
+/* ---------- Rendu : liste ---------- */
 function render() {
   const board = $('#board'); board.innerHTML = '';
-  const visible = state.data.chantiers.filter(matches);
+  let visible = state.data.chantiers.filter(matches);
 
   if (visible.length === 0) {
     board.classList.add('is-empty');
@@ -279,67 +301,74 @@ function render() {
   }
   board.classList.remove('is-empty');
 
-  const cols = [...STATES];
-  const unknown = visible.filter((c) => !STATES.includes(c.etat));
-  if (unknown.length) cols.push('Non classé');
+  const cmp = SORTS[state.sort.key] || SORTS.etat;
+  visible = [...visible].sort((a, b) => cmp(a, b) * state.sort.dir);
 
-  cols.forEach((s) => {
-    const items = visible.filter((c) => (s === 'Non classé' ? !STATES.includes(c.etat) : c.etat === s));
-    const col = el('section', 'col', { 'data-state': s });
-    setCssVar(col.appendChild(el('header', 'col__head')), STATE_VAR[s] || '--ink-3');
-    const head = col.querySelector('.col__head');
-    head.innerHTML = `<span class="col__name">${s}</span><span class="col__count">${items.length}</span>`;
-    const body = el('div', 'col__body', { role: 'list', 'aria-label': `Chantiers — ${s}` });
-    if (items.length === 0) body.append(el('p', 'col__empty', { text: '—' }));
-    else items.sort(sortChantiers).forEach((ch) => body.append(cardEl(ch)));
-    col.append(body); $('#board').append(col);
+  const table = el('div', 'list', { role: 'table', 'aria-label': 'Liste des chantiers' });
+  const head = el('div', 'list__head', { role: 'row' });
+  COLUMNS.forEach((col) => {
+    const active = state.sort.key === col.key;
+    const cls = `lh lcell--${col.key}${active ? ' is-active is-' + (state.sort.dir === 1 ? 'asc' : 'desc') : ''}`;
+    const cell = el(col.sortable ? 'button' : 'div', cls, { role: 'columnheader' });
+    if (col.sortable) {
+      cell.type = 'button';
+      cell.setAttribute('aria-sort', active ? (state.sort.dir === 1 ? 'ascending' : 'descending') : 'none');
+      cell.innerHTML = `<span>${col.label}</span><span class="lh__caret" aria-hidden="true"></span>`;
+      cell.addEventListener('click', () => sortBy(col.key));
+    } else cell.textContent = col.label;
+    head.append(cell);
   });
+  table.append(head);
+  visible.forEach((ch) => table.append(rowEl(ch)));
+  board.append(table);
   announce(visible.length);
 }
-function sortChantiers(a, b) {
-  const pr = (x) => PRIORITES.indexOf(x.priorite) === -1 ? 9 : PRIORITES.indexOf(x.priorite);
-  if (pr(a) !== pr(b)) return pr(a) - pr(b);
-  const ea = a.echeance || '9999', eb = b.echeance || '9999';
-  return ea < eb ? -1 : ea > eb ? 1 : a.chantier.localeCompare(b.chantier, 'fr');
+function sortBy(key) {
+  if (state.sort.key === key) state.sort.dir *= -1; else { state.sort.key = key; state.sort.dir = 1; }
+  render();
+}
+
+function docButtonsHTML(ch) {
+  const groups = [['Livret', ch.documents?.livret], ['Tract', ch.documents?.tract], ['Autre', ch.documents?.autres]];
+  const all = groups.flatMap(([label, arr]) => (arr || []).map((d) => ({ ...d, label })));
+  if (!all.length) return '<span class="lmuted">—</span>';
+  return `<div class="docchips">${all.map((d) => `<button class="docchip" type="button" data-id="${d.id}" data-name="${escapeHtml(d.name)}" data-mime="${d.mime}" aria-label="Télécharger ${escapeHtml(d.name)}" title="Télécharger ${escapeHtml(d.name)}">${icon('download', 'ic ic--xs')}<span>${DOC_SHORT[d.label]}</span></button>`).join('')}</div>`;
+}
+function rowEl(ch) {
+  const row = el('div', 'lrow', { role: 'row' });
+  const ecl = echeanceClass(ch);
+  const sv = STATE_VAR[ch.etat] || '--ink-3';
+
+  const c1 = el('div', 'lcell lcell--chantier', { role: 'cell' });
+  const aria = `Ouvrir ${ch.chantier}${ch.ref ? ', ' + ch.ref : ''} — état ${ch.etat || 'non classé'}${ch.pilote ? ', piloté par ' + ch.pilote : ''}${ch.echeance ? ', échéance ' + fmtDate(ch.echeance) : ''}`;
+  const btn = el('button', 'lrow__open', { type: 'button', 'aria-label': aria });
+  btn.innerHTML = `<span class="lrow__title">${escapeHtml(ch.chantier)}</span><span class="lrow__sub">${ch.pilier ? `<span class="pastille" style="--c:var(${PILIER_VAR[ch.pilier]})">${ch.pilier}</span>` : ''}${ch.ref ? `<span class="lrow__ref">${ch.ref}</span>` : ''}</span>`;
+  c1.append(btn);
+
+  const c2 = el('div', 'lcell lcell--etat', { role: 'cell', 'data-label': 'Avancement' });
+  c2.innerHTML = `<span class="etatpill" style="--c:var(${sv})"><span class="etatpill__dot"></span>${ch.etat || 'Non classé'}</span><span class="rail" style="--c:var(${sv})" aria-hidden="true">${railHTML(ch.etat)}</span>`;
+
+  const c3 = el('div', 'lcell lcell--priorite', { role: 'cell', 'data-label': 'Priorité' });
+  c3.innerHTML = ch.priorite ? `<span class="prio" style="--c:var(${PRIORITE_VAR[ch.priorite] || '--ink-3'})"><span class="prio__dot"></span>${ch.priorite}</span>` : '<span class="lmuted">—</span>';
+
+  const c4 = el('div', 'lcell lcell--pilote', { role: 'cell', 'data-label': 'Pilote' });
+  c4.innerHTML = ch.pilote ? escapeHtml(ch.pilote) : '<span class="lmuted">—</span>';
+
+  const c5 = el('div', 'lcell lcell--echeance', { role: 'cell', 'data-label': 'Échéance' });
+  c5.innerHTML = ch.echeance ? `<span class="ech ${ecl}">${ecl ? icon('alert', 'ic ic--xs') : ''}<span>${fmtDate(ch.echeance)}${ecl === 'is-urgent' ? ' · en retard' : ecl === 'is-soon' ? ' · bientôt' : ''}</span></span>` : '<span class="lmuted">—</span>';
+
+  const c6 = el('div', 'lcell lcell--documents', { role: 'cell', 'data-label': 'Documents' });
+  c6.innerHTML = docButtonsHTML(ch);
+  c6.querySelectorAll('.docchip').forEach((b) => b.addEventListener('click', (e) => { e.stopPropagation(); downloadDoc(b); }));
+
+  row.append(c1, c2, c3, c4, c5, c6);
+  row.addEventListener('click', (e) => { if (e.target.closest('.docchip')) return; openDetail(ch, btn); });
+  return row;
 }
 function announce(n) {
   $('#result-status').textContent = `${n} chantier${n > 1 ? 's' : ''} affiché${n > 1 ? 's' : ''}.`;
 }
 
-function cardEl(ch) {
-  const card = el('article', 'card', { role: 'listitem' });
-  const ecl = echeanceClass(ch);
-  const top = el('div', 'card__top');
-  if (ch.pilier) { const p = el('span', 'pastille', { text: ch.pilier }); setCssVar(p, PILIER_VAR[ch.pilier]); top.append(p); }
-  if (ch.ref) top.append(el('span', 'card__ref', { text: ch.ref }));
-  card.append(top);
-
-  // Vrai titre (navigable au lecteur d'écran) + bouton d'ouverture qui couvre la carte.
-  const h3 = el('h3', 'card__title');
-  const aria = `Ouvrir ${ch.chantier}${ch.ref ? ', ' + ch.ref : ''} — état ${ch.etat || 'non classé'}`
-    + `${ch.pilote ? ', piloté par ' + ch.pilote : ''}${ch.echeance ? ', échéance ' + fmtDate(ch.echeance) : ''}`;
-  const openBtn = el('button', 'card__open', { type: 'button', 'aria-label': aria });
-  openBtn.textContent = ch.chantier;
-  h3.append(openBtn); card.append(h3);
-
-  const meta = el('div', 'card__meta');
-  if (ch.pilote) meta.innerHTML += `<span>${icon('user')}<span>${escapeHtml(ch.pilote)}</span></span>`;
-  if (ch.echeance) meta.innerHTML += `<span class="card__echeance ${ecl}">${icon(ecl ? 'alert' : 'calendar')}<span>${fmtDate(ch.echeance)}${ecl === 'is-urgent' ? ' · en retard' : ecl === 'is-soon' ? ' · bientôt' : ''}</span></span>`;
-  if (ch.dateAnnonce && ch.etat === 'Annoncé') meta.innerHTML += `<span>${icon('megaphone')}<span>${fmtDate(ch.dateAnnonce)}</span></span>`;
-  if (meta.children.length) card.append(meta);
-
-  if (ch.aProduire?.length) {
-    const pr = el('div', 'produire');
-    pr.innerHTML = ch.aProduire.map(tagHTML).join('');
-    card.append(pr);
-  }
-  const rail = el('div', 'rail', { 'aria-hidden': 'true' });
-  setCssVar(rail, STATE_VAR[ch.etat]); rail.innerHTML = railHTML(ch.etat);
-  card.append(rail);
-
-  openBtn.addEventListener('click', () => openDetail(ch, openBtn));
-  return card;
-}
 function escapeHtml(s) { return (s || '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
 
 /* ---------- Slide-over ---------- */
@@ -410,11 +439,18 @@ async function downloadDoc(btn) {
     document.body.append(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 4000);
   } catch (e) {
-    const meta = btn.querySelector('.docbtn__meta');
-    const original = meta.textContent;
-    meta.textContent = 'Téléchargement impossible — réessayez.';
-    meta.classList.add('is-error');
-    setTimeout(() => { meta.textContent = original; meta.classList.remove('is-error'); }, 5000);
+    const meta = btn.querySelector('.docbtn__meta'); // panneau détail
+    if (meta) {
+      const original = meta.textContent;
+      meta.textContent = 'Téléchargement impossible — réessayez.';
+      meta.classList.add('is-error');
+      setTimeout(() => { meta.textContent = original; meta.classList.remove('is-error'); }, 5000);
+    } else { // puce de liste : pas de zone méta, on signale par le titre + une classe
+      const original = btn.getAttribute('title');
+      btn.classList.add('is-error');
+      btn.setAttribute('title', 'Téléchargement impossible — réessayez.');
+      setTimeout(() => { btn.classList.remove('is-error'); if (original) btn.setAttribute('title', original); }, 5000);
+    }
   } finally {
     btn.classList.remove('is-loading');
   }
