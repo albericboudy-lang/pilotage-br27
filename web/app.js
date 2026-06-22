@@ -27,13 +27,13 @@ const state = {
   manifest: null, key: null, pw: null, data: null,
   filters: { etats: new Set(), piliers: new Set() },
   query: '',
-  sort: { key: 'etat', dir: -1 }, // tri par défaut : du plus avancé (Lancé) au moins avancé
+  sort: { key: 'lancement', dir: 1 }, // tri par défaut : par date de lancement, du 1er lancé au dernier
   view: 'liste', // 'liste' | 'pilier'
   lastFocus: null, // élément ayant ouvert le slide-over
 };
 
 /* ---------- Mémoire d'interface (session uniquement — jamais de données déchiffrées) ---------- */
-const UI_KEY = 'br27-ui';
+const UI_KEY = 'br27-ui2'; // bump : ignore les préférences mémorisées d'avant (nouveau tri par défaut)
 function persistUi() {
   try {
     sessionStorage.setItem(UI_KEY, JSON.stringify({
@@ -301,7 +301,13 @@ const byStr = (a, b) => (a || '').localeCompare(b || '', 'fr', { sensitivity: 'b
 const SORTS = {
   chantier: (a, b) => byStr(a.chantier, b.chantier),
   etat: (a, b) => (stIdx(a.etat) - stIdx(b.etat)) || byStr(a.chantier, b.chantier),
-  lancement: (a, b) => byStr(a.dateAnnonce || '0000', b.dateAnnonce || '0000') || byStr(a.chantier, b.chantier),
+  // Par date de lancement ; les chantiers sans date d'annonce passent toujours en bas.
+  lancement: (a, b) => {
+    const da = a.dateAnnonce, db = b.dateAnnonce;
+    if (!da && !db) return byStr(a.chantier, b.chantier);
+    if (!da) return 1; if (!db) return -1;
+    return byStr(da, db) || byStr(a.chantier, b.chantier);
+  },
 };
 // Colonnes : Chantier + Lancement (date d'annonce) + Avancement + Documents.
 function buildColumns() {
@@ -370,7 +376,7 @@ function render() {
 }
 function sortBy(key) {
   if (state.sort.key === key) state.sort.dir *= -1;
-  else { state.sort.key = key; state.sort.dir = (key === 'etat' || key === 'lancement') ? -1 : 1; } // avancement/lancement : plus récent d'abord
+  else { state.sort.key = key; state.sort.dir = key === 'etat' ? -1 : 1; } // avancement : plus avancé d'abord ; lancement : du 1er au dernier
   persistUi(); render();
 }
 function setView(v) { if (state.view === v) return; state.view = v; persistUi(); syncViewToggle(); render(); }
