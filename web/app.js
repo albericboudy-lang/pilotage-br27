@@ -303,12 +303,12 @@ const SORTS = {
   etat: (a, b) => (stIdx(a.etat) - stIdx(b.etat)) || byStr(a.chantier, b.chantier),
   lancement: (a, b) => byStr(a.dateAnnonce || '0000', b.dateAnnonce || '0000') || byStr(a.chantier, b.chantier),
 };
-// Colonnes : Chantier + Avancement + Lancement (date d'annonce) + Documents.
+// Colonnes : Chantier + Lancement (date d'annonce) + Avancement + Documents.
 function buildColumns() {
   return [
     { key: 'chantier', label: 'Chantier', sortable: true },
-    { key: 'etat', label: 'Avancement', sortable: true },
     { key: 'lancement', label: 'Lancement', sortable: true },
+    { key: 'etat', label: 'Avancement', sortable: true },
     { key: 'documents', label: 'Documents', sortable: false },
   ];
 }
@@ -410,7 +410,7 @@ function rowEl(ch) {
   cL.innerHTML = ch.dateAnnonce ? `<span class="ldate">${fmtDate(ch.dateAnnonce)}</span>` : '<span class="lmuted">—</span>';
   const c3 = el('div', 'lcell lcell--documents', { role: 'cell', 'data-label': 'Documents' });
   c3.innerHTML = docsAffordanceHTML(ch); wireDocsAff(c3, ch);
-  row.append(c1, c2, cL, c3);
+  row.append(c1, cL, c2, c3);
   row.addEventListener('click', (e) => { if (e.target.closest('button')) return; openDetail(ch, btn); });
   return row;
 }
