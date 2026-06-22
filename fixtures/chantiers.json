@@ -14,6 +14,10 @@
       "documents": {
         "livret": [{ "name": "Livret — Travail gagnant.pdf", "mime": "application/pdf", "path": "files/livret-fiscalite-travail.pdf" }],
         "tract": [{ "name": "Tract — Travail gagnant.pdf", "mime": "application/pdf", "path": "files/tract-securite-quotidien.pdf" }],
+        "travail": [
+          { "name": "NT — Fiscalité du travail.pdf", "mime": "application/pdf", "path": "files/note-annexe-fierte.pdf" },
+          { "name": "NT — Heures supplémentaires.pdf", "mime": "application/pdf", "path": "files/livret-souverainete.pdf" }
+        ],
         "retombees": [{ "name": "Retombées presse — Travail gagnant.pdf", "mime": "application/pdf", "path": "files/note-annexe-fierte.pdf" }],
         "autres": []
       }

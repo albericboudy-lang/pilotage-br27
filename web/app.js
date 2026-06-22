@@ -263,13 +263,16 @@ const SORTS = {
   chantier: (a, b) => byStr(a.chantier, b.chantier),
   etat: (a, b) => (stIdx(a.etat) - stIdx(b.etat)) || byStr(a.chantier, b.chantier),
 };
-// Colonnes : Chantier + Avancement + les colonnes documents (lues dynamiquement).
+// Colonnes : Chantier + Avancement + une colonne Documents (bouton → fenêtre).
 function buildColumns() {
   return [
     { key: 'chantier', label: 'Chantier', sortable: true },
     { key: 'etat', label: 'Avancement', sortable: true },
-    ...(state.data.docColumns || []).map((c) => ({ key: c.key, label: c.label, sortable: false, doc: c.key })),
+    { key: 'documents', label: 'Documents', sortable: false },
   ];
+}
+function docCount(ch) {
+  return (state.data.docColumns || []).reduce((n, col) => n + (ch.documents?.[col.key]?.length || 0), 0);
 }
 
 /* ---------- Rendu : liste ---------- */
@@ -300,9 +303,7 @@ function render() {
   visible = [...visible].sort((a, b) => cmp(a, b) * state.sort.dir);
 
   const columns = buildColumns();
-  const docCount = columns.filter((c) => c.doc).length;
   const table = el('div', 'list', { role: 'table', 'aria-label': 'Liste des chantiers' });
-  table.style.setProperty('--lcols', 'minmax(220px,2.2fr) minmax(150px,1.3fr) ' + Array(docCount).fill('minmax(120px,.9fr)').join(' '));
   const head = el('div', 'list__head', { role: 'row' });
   columns.forEach((col) => {
     const active = state.sort.key === col.key;
@@ -327,10 +328,6 @@ function sortBy(key) {
   render();
 }
 
-function docCellHTML(files) {
-  if (!files || !files.length) return '<span class="lmuted">—</span>';
-  return `<div class="docchips">${files.map((d) => `<button class="docchip" type="button" data-id="${d.id}" data-name="${escapeHtml(d.name)}" data-mime="${d.mime}" aria-label="Télécharger ${escapeHtml(d.name)}" title="Télécharger ${escapeHtml(d.name)}">${icon('download', 'ic ic--sm')}<span>Télécharger</span></button>`).join('')}</div>`;
-}
 function rowEl(ch) {
   const row = el('div', 'lrow', { role: 'row' });
   const sv = stateVar(ch.etat);
@@ -344,15 +341,19 @@ function rowEl(ch) {
   const c2 = el('div', 'lcell lcell--etat', { role: 'cell', 'data-label': 'Avancement' });
   c2.innerHTML = `<span class="etatpill" style="--c:var(${sv})"><span class="etatpill__dot"></span>${etatLabel(ch.etat)}</span><span class="rail" style="--c:var(${sv})" aria-hidden="true">${railHTML(ch.etat)}</span>`;
 
-  const cells = [c1, c2];
-  for (const col of (state.data.docColumns || [])) {
-    const cell = el('div', `lcell lcell--doc lcell--${col.key}`, { role: 'cell', 'data-label': col.label });
-    cell.innerHTML = docCellHTML(ch.documents?.[col.key]);
-    cell.querySelectorAll('.docchip').forEach((b) => b.addEventListener('click', (e) => { e.stopPropagation(); downloadDoc(b); }));
-    cells.push(cell);
+  // Colonne Documents : un bouton (compteur) ouvrant la fenêtre détaillée.
+  const c3 = el('div', 'lcell lcell--documents', { role: 'cell', 'data-label': 'Documents' });
+  const n = docCount(ch);
+  if (n === 0) c3.innerHTML = '<span class="lmuted">—</span>';
+  else {
+    const db = el('button', 'docsbtn', { type: 'button', 'aria-label': `Voir les ${n} document(s) de ${ch.chantier}` });
+    db.innerHTML = `${icon('file', 'ic ic--sm')}<span>${n} doc${n > 1 ? 's' : ''}</span>`;
+    db.addEventListener('click', (e) => { e.stopPropagation(); openDetail(ch, db); });
+    c3.append(db);
   }
-  row.append(...cells);
-  row.addEventListener('click', (e) => { if (e.target.closest('.docchip')) return; openDetail(ch, btn); });
+
+  row.append(c1, c2, c3);
+  row.addEventListener('click', (e) => { if (e.target.closest('button')) return; openDetail(ch, btn); });
   return row;
 }
 function announce(n) {
@@ -390,6 +391,8 @@ function openDetail(ch, trigger) {
 
   detail.querySelector('.detail__close').addEventListener('click', closeDetail);
   detail.querySelectorAll('.docbtn').forEach((btn) => btn.addEventListener('click', () => downloadDoc(btn)));
+  const pb = detail.querySelector('.packbtn');
+  if (pb) pb.addEventListener('click', () => downloadPack(ch, pb));
 
   detail.hidden = false; scrim.hidden = false;
   app.inert = true; // confine réellement le focus à la modale
@@ -399,16 +402,76 @@ function openDetail(ch, trigger) {
   document.addEventListener('keydown', onDetailKey);
   scrim.addEventListener('click', closeDetail, { once: true });
 }
+function docbtnHTML(d) {
+  return `<button class="docbtn" type="button" data-id="${d.id}" data-name="${escapeHtml(d.name)}" data-mime="${d.mime}" aria-label="Télécharger ${escapeHtml(d.name)}">
+      <span class="docbtn__ic">${icon('file')}</span>
+      <span class="docbtn__main"><span class="docbtn__name">${escapeHtml(d.name)}</span><span class="docbtn__meta">${d.size ? fmtSize(d.size) : 'Télécharger'}</span></span>
+      <span class="docbtn__dl">${icon('download')}</span>
+    </button>`;
+}
 function renderDocs(ch) {
   const cols = state.data.docColumns || [];
-  const all = cols.flatMap((col) => (ch.documents?.[col.key] || []).map((d) => ({ ...d, label: col.label })));
-  if (!all.length) return `<p class="docs__empty">Aucun document pour l’instant.</p>`;
-  return `<div class="docs">${all.map((d) => `
-    <button class="docbtn" type="button" data-id="${d.id}" data-name="${escapeHtml(d.name)}" data-mime="${d.mime}" aria-label="Télécharger ${escapeHtml(d.name)}">
-      <span class="docbtn__ic">${icon('file')}</span>
-      <span class="docbtn__main"><span class="docbtn__name">Télécharger — ${escapeHtml(d.label)}</span><span class="docbtn__meta">${escapeHtml(d.name)}${d.size ? ' · ' + fmtSize(d.size) : ''}</span></span>
-      <span class="docbtn__dl">${icon('download')}</span>
-    </button>`).join('')}</div>`;
+  const groups = cols.map((col) => ({ label: col.label, files: ch.documents?.[col.key] || [] })).filter((g) => g.files.length);
+  if (!groups.length) return `<p class="docs__empty">Aucun document pour l’instant.</p>`;
+  const total = groups.reduce((n, g) => n + g.files.length, 0);
+  const pack = total > 1
+    ? `<button class="btn btn--primary btn--sm packbtn" type="button"><span class="btn__label">${icon('download', 'ic ic--sm')} Tout télécharger (.zip)</span><span class="btn__spin" aria-hidden="true"></span></button>`
+    : '';
+  const body = groups.map((g) => `<div class="docgroup">
+      <div class="docgroup__label">${escapeHtml(g.label)} <span class="docgroup__n">${g.files.length}</span></div>
+      <div class="docgroup__list">${g.files.map(docbtnHTML).join('')}</div>
+    </div>`).join('');
+  return `${pack}<div class="docs">${body}</div>`;
+}
+
+/* ---------- Téléchargement « pack » (.zip côté navigateur, sans dépendance) ---------- */
+const CRC_TABLE = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1); t[n] = c >>> 0; } return t; })();
+function crc32(buf) { let c = 0xFFFFFFFF; for (let i = 0; i < buf.length; i++) c = CRC_TABLE[(c ^ buf[i]) & 0xFF] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
+function makeZip(entries) { // store (sans compression — les PDF le sont déjà)
+  const enc = new TextEncoder(); const chunks = []; const central = []; let offset = 0;
+  for (const e of entries) {
+    const name = enc.encode(e.name); const crc = crc32(e.data); const size = e.data.length;
+    const lh = new DataView(new ArrayBuffer(30));
+    lh.setUint32(0, 0x04034b50, true); lh.setUint16(4, 20, true); lh.setUint16(6, 0x0800, true);
+    lh.setUint16(8, 0, true); lh.setUint32(14, crc, true); lh.setUint32(18, size, true);
+    lh.setUint32(22, size, true); lh.setUint16(26, name.length, true);
+    chunks.push(new Uint8Array(lh.buffer), name, e.data);
+    const cd = new DataView(new ArrayBuffer(46));
+    cd.setUint32(0, 0x02014b50, true); cd.setUint16(4, 20, true); cd.setUint16(6, 20, true);
+    cd.setUint16(8, 0x0800, true); cd.setUint32(16, crc, true); cd.setUint32(20, size, true);
+    cd.setUint32(24, size, true); cd.setUint16(28, name.length, true); cd.setUint32(42, offset, true);
+    central.push(new Uint8Array(cd.buffer), name);
+    offset += 30 + name.length + size;
+  }
+  let centralSize = 0; for (const c of central) centralSize += c.length;
+  const eocd = new DataView(new ArrayBuffer(22));
+  eocd.setUint32(0, 0x06054b50, true); eocd.setUint16(8, entries.length, true);
+  eocd.setUint16(10, entries.length, true); eocd.setUint32(12, centralSize, true); eocd.setUint32(16, offset, true);
+  const parts = [...chunks, ...central, new Uint8Array(eocd.buffer)];
+  let len = 0; for (const p of parts) len += p.length;
+  const out = new Uint8Array(len); let pos = 0; for (const p of parts) { out.set(p, pos); pos += p.length; }
+  return out;
+}
+async function downloadPack(ch, btn) {
+  if (btn.classList.contains('is-loading')) return;
+  btn.classList.add('is-loading');
+  try {
+    const cols = state.data.docColumns || [];
+    const all = cols.flatMap((col) => (ch.documents?.[col.key] || []));
+    const used = new Map(); const entries = [];
+    for (const d of all) {
+      const bytes = await decryptBytes(state.key, await fetchEnc('files/' + d.id + '.enc'));
+      let name = d.name || 'document';
+      if (used.has(name)) { const i = name.lastIndexOf('.'); const k = used.get(name); name = i > 0 ? `${name.slice(0, i)} (${k})${name.slice(i)}` : `${name} (${k})`; }
+      used.set(d.name || 'document', (used.get(d.name || 'document') || 0) + 1);
+      entries.push({ name, data: bytes });
+    }
+    const url = URL.createObjectURL(new Blob([makeZip(entries)], { type: 'application/zip' }));
+    const a = el('a', null, { href: url, download: (ch.chantier || 'chantier').replace(/[^\w\-]+/g, '_') + '.zip' });
+    document.body.append(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+  } catch (e) { btn.classList.add('is-error'); setTimeout(() => btn.classList.remove('is-error'), 5000); }
+  finally { btn.classList.remove('is-loading'); }
 }
 async function downloadDoc(btn) {
   if (btn.classList.contains('is-loading')) return;

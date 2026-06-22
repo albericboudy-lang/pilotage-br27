@@ -207,7 +207,7 @@ a{color:inherit; text-decoration:none}
 /* --- Liste des chantiers (vue principale) --- */
 .board{flex:1;padding:var(--s5)}
 .board.is-empty{padding:0;display:block}
-.list{--lcols:minmax(240px,2.4fr) minmax(165px,1.4fr) minmax(120px,.9fr) minmax(120px,.9fr) minmax(120px,.9fr);
+.list{--lcols:minmax(260px,2.6fr) minmax(190px,1.5fr) minmax(150px,1fr);
   display:flex;flex-direction:column;background:var(--surface);border:1px solid var(--border);border-radius:var(--r3);overflow:hidden;box-shadow:var(--sh1)}
 .list__head{display:grid;grid-template-columns:var(--lcols);gap:var(--s4);align-items:center;
   padding:var(--s4);background:var(--surface-2);border-bottom:1px solid var(--border)}
@@ -247,6 +247,24 @@ button.lh:hover{color:var(--ink-2)}
 .docchip:hover .ic{color:var(--accent)}
 .docchip.is-loading .ic{animation:spin .8s linear infinite}
 .docchip.is-error{border-color:var(--urgent);color:var(--urgent)}
+/* Bouton « Documents » (colonne) -> ouvre la fenêtre */
+.docsbtn{display:inline-flex;align-items:center;gap:7px;height:36px;padding:0 14px;border-radius:var(--rp);
+  background:var(--surface-2);border:1px solid var(--border-2);color:var(--ink);cursor:pointer;
+  font-size:var(--fs-caption);font-weight:600;font-family:inherit;
+  transition:border-color var(--dur) var(--ease),background var(--dur) var(--ease)}
+.docsbtn:hover{border-color:var(--accent);background:var(--accent-soft)}
+.docsbtn .ic{color:var(--ink-3)}
+.docsbtn:hover .ic{color:var(--accent)}
+/* Fenêtre détail : documents groupés par type + pack */
+.packbtn{width:100%;margin-bottom:var(--s3)}
+.packbtn .btn__label{display:inline-flex;align-items:center;gap:7px}
+.docgroup{margin-bottom:var(--s4)}
+.docgroup:last-child{margin-bottom:0}
+.docgroup__label{display:flex;align-items:center;gap:8px;font-size:var(--fs-caption);text-transform:uppercase;
+  letter-spacing:.08em;color:var(--ink-3);font-weight:600;margin-bottom:var(--s2)}
+.docgroup__n{min-width:20px;height:18px;padding:0 6px;display:inline-grid;place-items:center;border-radius:var(--rp);
+  background:var(--surface-3);color:var(--ink-2);font-size:11px;letter-spacing:0}
+.docgroup__list{display:flex;flex-direction:column;gap:var(--s2)}
 .pastille{display:inline-flex;align-items:center;gap:6px;height:21px;padding:0 9px;border-radius:var(--rp);
   font-size:var(--fs-caption);font-weight:600;color:var(--ink);background:color-mix(in srgb,var(--c) 13%,var(--surface));
   border:1px solid color-mix(in srgb,var(--c) 30%,transparent)} /* texte en ink (AA garanti) ; identité = pastille + teinte */

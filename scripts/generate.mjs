@@ -30,12 +30,15 @@ const FIX = join(ROOT, 'fixtures');
 const PILIERS = ['Prospérité', 'Ordre', 'Fierté'];
 // États retirés de l'affichage (demande utilisateur). Le reste est lu DYNAMIQUEMENT depuis Notion.
 const HIDDEN_STATES = new Set(['GT lancé']);
-// Colonnes de documents exposées (« Documents de travail » EXCLU — interne, cf. CDC).
+// Colonnes de documents exposées, calquées sur le tableau Notion.
+// « Documents de travail » est inclus à la demande explicite du commanditaire
+// (le CDC le réservait à l'interne ; arbitrage assumé par Albéric).
 const DOC_COLUMNS = [
   { key: 'livret', prop: 'Livret', label: 'Livret' },
   { key: 'tract', prop: 'Tract', label: 'Tract' },
+  { key: 'travail', prop: 'Documents de travail', label: 'Documents de travail' },
   { key: 'retombees', prop: 'Retombées Presse', label: 'Retombées presse' },
-  { key: 'autres', prop: 'Autres supports de présentation', label: 'Autres' },
+  { key: 'autres', prop: 'Autres supports de présentation', label: 'Autres supports de présentation' },
 ];
 
 const SALT = webcrypto.getRandomValues(new Uint8Array(KDF.saltBytes)); // sel aléatoire par build
@@ -149,7 +152,7 @@ async function readLive() {
       dateAnnonce: readProp(props, "Date d'annonce"),
       prochaineEtape: readProp(props, 'Prochaine étape'),
       aProduire: readProp(props, 'To do') || readProp(props, 'À produire') || [],
-      // Fichiers par colonne (« Documents de travail » volontairement NON LU — interne, CDC §5.4/§9).
+      // Fichiers par colonne (cf. DOC_COLUMNS — inclut « Documents de travail » sur demande).
       _files: Object.fromEntries(DOC_COLUMNS.map((c) => [c.key, fileEntries(readProp(props, c.prop))])),
     };
   });
