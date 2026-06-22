@@ -32,6 +32,8 @@
       <g id="i-chevron"><path d="m9 18 6-6-6-6"/></g>
       <g id="i-check"><path d="M20 6 9 17l-5-5"/></g>
       <g id="i-megaphone"><path d="m3 11 18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/></g>
+      <g id="i-list"><path d="M3 5h.01"/><path d="M3 12h.01"/><path d="M3 19h.01"/><path d="M8 5h13"/><path d="M8 12h13"/><path d="M8 19h13"/></g>
+      <g id="i-columns"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/><path d="M15 3v18"/></g>
     </defs>
   </svg>
 
@@ -43,7 +45,11 @@
     </div>
     <form id="gate-form" class="gate__card" autocomplete="off" novalidate>
       <div class="gate__brand">
-        <img class="gate__mark" src="assets/logo/br-mark-white.svg" alt="" width="44" height="29">
+        <svg class="brmark gate__mark" viewBox="0 0 1039.99 692" aria-hidden="true" focusable="false">
+          <path class="brmark__l" d="M0,0h320c118,0,206,67,206,179,0,67-31,118-79,149,60,29,101,81,101,158,0,124-96,195-219,195H0V0ZM291,278c48,0,86-28,86-78,0-46-38-70-83-70h-142v148h139ZM303,551c50,0,92-29,92-81s-43-78-96-78h-147v159h151Z"/>
+          <path class="brmark__l" d="M602.99,139h144c0,28,0,51-1,76h2c29-54,77-78,129-78,9,0,19,1,29,2v132h-40c-79,0-119,57-119,135v275h-144V139Z"/>
+          <path class="brmark__d" d="M852.99,601c0-53,40-90,93-90s94,37,94,90-40,91-94,91-93-37-93-91Z"/>
+        </svg>
         <span class="gate__eyebrow">Pour la France</span>
       </div>
       <h1 class="gate__title">Pilotage du projet<span class="reddot" aria-hidden="true"></span></h1>
@@ -67,7 +73,11 @@
   <div id="app" class="app" hidden>
     <header class="topbar">
       <a class="topbar__brand" href="#" id="home" aria-label="Pilotage du projet — accueil">
-        <img class="topbar__mark" src="assets/logo/br-mark.svg" alt="" width="30" height="20">
+        <svg class="brmark topbar__mark" viewBox="0 0 1039.99 692" aria-hidden="true" focusable="false">
+          <path class="brmark__l" d="M0,0h320c118,0,206,67,206,179,0,67-31,118-79,149,60,29,101,81,101,158,0,124-96,195-219,195H0V0ZM291,278c48,0,86-28,86-78,0-46-38-70-83-70h-142v148h139ZM303,551c50,0,92-29,92-81s-43-78-96-78h-147v159h151Z"/>
+          <path class="brmark__l" d="M602.99,139h144c0,28,0,51-1,76h2c29-54,77-78,129-78,9,0,19,1,29,2v132h-40c-79,0-119,57-119,135v275h-144V139Z"/>
+          <path class="brmark__d" d="M852.99,601c0-53,40-90,93-90s94,37,94,90-40,91-94,91-93-37-93-91Z"/>
+        </svg>
         <span class="topbar__titles">
           <span class="topbar__title">Pilotage du projet</span>
           <span class="topbar__wordmark">BR.27 · diffusion restreinte</span>
@@ -90,15 +100,18 @@
     </header>
 
     <section class="synthese" aria-label="Vue d’ensemble">
-      <div class="kpis" id="kpis" role="group" aria-label="Indicateurs — cliquer un état pour filtrer"></div>
+      <div class="cockpit" id="cockpit"></div>
+      <div class="kpis" id="kpis" role="group" aria-label="Indicateurs par état — cliquer pour filtrer"></div>
     </section>
 
-    <section class="filters" aria-label="Filtres">
+    <section class="filters" aria-label="Filtres et vue">
+      <div class="vtoggle" id="view-toggle" role="group" aria-label="Choisir la vue"></div>
       <div class="filters__lead"><svg class="ic ic--sm" aria-hidden="true"><use href="#i-sliders"/></svg><span>Filtrer</span></div>
       <div class="filters__groups" id="filter-groups"></div>
       <div class="filters__active" id="active-chips" aria-live="polite"></div>
       <button id="clear" class="btn btn--ghost btn--sm" type="button" hidden>Effacer</button>
     </section>
+    <div id="databanner" class="databanner" role="status" hidden></div>
 
     <p class="sr-status" id="result-status" role="status" aria-live="polite"></p>
     <main class="board" id="board" aria-label="Liste des chantiers"></main>

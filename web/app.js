@@ -25,11 +25,34 @@ const IV_BYTES = 12;
 /* ---------- État applicatif ---------- */
 const state = {
   manifest: null, key: null, pw: null, data: null,
-  filters: { etats: new Set(), piliers: new Set(), priorites: new Set() },
+  filters: { etats: new Set(), piliers: new Set() },
   query: '',
   sort: { key: 'etat', dir: -1 }, // tri par défaut : du plus avancé (Lancé) au moins avancé
+  view: 'liste', // 'liste' | 'pilier'
   lastFocus: null, // élément ayant ouvert le slide-over
 };
+
+/* ---------- Mémoire d'interface (session uniquement — jamais de données déchiffrées) ---------- */
+const UI_KEY = 'br27-ui';
+function persistUi() {
+  try {
+    sessionStorage.setItem(UI_KEY, JSON.stringify({
+      sort: state.sort, view: state.view, query: state.query,
+      etats: [...state.filters.etats], piliers: [...state.filters.piliers],
+    }));
+  } catch { /* mode privé : on ignore */ }
+}
+function restoreUi() {
+  try {
+    const s = JSON.parse(sessionStorage.getItem(UI_KEY) || 'null'); if (!s) return;
+    if (s.sort) state.sort = s.sort;
+    if (s.view === 'pilier' || s.view === 'liste') state.view = s.view;
+    if (s.query) { state.query = s.query; const si = $('#search'); if (si) si.value = s.query; }
+    state.filters.etats = new Set(Array.isArray(s.etats) ? s.etats : []);
+    state.filters.piliers = new Set(Array.isArray(s.piliers) ? s.piliers : []);
+  } catch { /* ignore */ }
+}
+function clearUi() { try { sessionStorage.removeItem(UI_KEY); } catch { /* ignore */ } }
 
 /* ---------- Utilitaires ---------- */
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -47,7 +70,6 @@ const b64ToBytes = (b64) => Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
 const deburr = (s) => (s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 const A_PRODUIRE_LONG = { EDL: 'Élément de langage', Lettre: 'Lettre', Note: 'Note', Visuel: 'Visuel', Discours: 'Discours', Livret: 'Livret', Tract: 'Tract', Autre: 'Autre' };
 const tagHTML = (t) => `<span class="tag" title="${A_PRODUIRE_LONG[t] || t}">${t}</span>`;
-const DOC_VERB = { Livret: 'Télécharger le livret', Tract: 'Télécharger le tract', Autre: 'Télécharger le document' };
 const fmtDate = (iso) => { if (!iso) return null; const d = new Date(iso); return Number.isNaN(+d) ? iso : d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' }); };
 const fmtDateTime = (iso) => { const d = new Date(iso); return Number.isNaN(+d) ? iso : d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }) + ' à ' + d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }); };
 const fmtSize = (n) => (!n ? '' : n < 1024 ? n + ' o' : n < 1048576 ? (n / 1024).toFixed(0) + ' Ko' : (n / 1048576).toFixed(1) + ' Mo');
@@ -80,13 +102,24 @@ async function boot() {
     const res = await fetch('manifest.json', { cache: 'no-store' });
     if (!res.ok) throw new Error('manifest indisponible');
     state.manifest = await res.json();
+    unlockBtn.disabled = false;
   } catch (e) {
-    showGateError('Données indisponibles. Réessaie plus tard.');
+    showGateError('Données momentanément indisponibles (régénération en cours ?).', boot);
     unlockBtn.disabled = true;
   }
   pwInput.focus();
 }
-function showGateError(msg) { gateError.textContent = msg; gateError.hidden = false; }
+function showGateError(msg, retry) {
+  gateError.innerHTML = escapeHtml(msg);
+  if (retry) {
+    const b = el('button', 'btn btn--ghost btn--sm gate__retry', { type: 'button', text: 'Réessayer' });
+    b.style.marginTop = '8px';
+    b.addEventListener('click', () => { gateError.hidden = true; retry(); });
+    gateError.append(document.createElement('br'), b);
+  }
+  gateError.hidden = false;
+}
+function setUnlockLabel(txt) { const l = unlockBtn.querySelector('.btn__label'); if (l) l.textContent = txt; }
 
 gateForm.addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -101,6 +134,7 @@ gateForm.addEventListener('submit', async (e) => {
     const probe = new TextDecoder().decode(await decryptBytes(key, b64ToBytes(m.check)));
     if (probe !== 'BR27-OK') throw new Error('bad');
     state.key = key; state.pw = pw;
+    setUnlockLabel('Déchiffrement des données…');
     await loadData();
     enterApp();
   } catch (err) {
@@ -108,6 +142,7 @@ gateForm.addEventListener('submit', async (e) => {
     pwInput.select();
   } finally {
     unlockBtn.classList.remove('is-loading'); unlockBtn.disabled = false;
+    setUnlockLabel('Accéder au cockpit');
   }
 });
 
@@ -121,11 +156,17 @@ function enterApp() {
   document.body.dataset.state = 'unlocked';
   gate.hidden = true; gate.style.display = 'none';
   app.hidden = false;
+  restoreUi();           // tri/vue/filtres mémorisés (session)
   renderUpdated();
+  renderCockpit();
   renderKpis();
   renderFilters();
   render();
-  $('#search').addEventListener('input', (e) => { state.query = e.target.value.trim(); render(); });
+  $('#search').addEventListener('input', (e) => { state.query = e.target.value.trim(); render(); persistUi(); });
+  // Séquence d'ouverture (générique d'état-major) — uniquement après que les données sont prêtes.
+  app.classList.add('is-entering');
+  animateRing();
+  setTimeout(() => app.classList.remove('is-entering'), 1100);
 }
 
 /* ---------- Rendu : horodatage ---------- */
@@ -146,6 +187,69 @@ function countsByState() {
   for (const ch of state.data.chantiers) if (c[ch.etat] != null) c[ch.etat]++;
   return c;
 }
+/* Avancement global : moyenne de la position d'état (aucun champ Notion — calcul honnête). */
+function avgProgress() {
+  const L = getStates().length;
+  const known = state.data.chantiers.filter((c) => stIdx(c.etat) >= 0);
+  if (!known.length || L < 2) return 0;
+  return Math.round(known.reduce((s, c) => s + stIdx(c.etat), 0) / ((L - 1) * known.length) * 100);
+}
+function ringSVG(pct) {
+  const r = 34, C = 2 * Math.PI * r, off = C * (1 - pct / 100);
+  return `<svg class="ring" viewBox="0 0 80 80" aria-hidden="true">
+    <circle class="ring__track" cx="40" cy="40" r="${r}"/>
+    <circle class="ring__val" cx="40" cy="40" r="${r}" stroke-dasharray="${C.toFixed(1)}" stroke-dashoffset="${off.toFixed(1)}" data-off="${off.toFixed(1)}" data-c="${C.toFixed(1)}"/>
+  </svg>`;
+}
+function livretKey() {
+  return (state.data.docColumns || []).find((c) => /livret/i.test(c.key) || /livret/i.test(c.label))?.key || null;
+}
+function renderCockpit() {
+  const wrap = $('#cockpit'); if (!wrap) return;
+  const ch = state.data.chantiers, states = getStates();
+  const pct = avgProgress();
+  const pretLabel = states.find((s) => /^pr[eê]ts?$/i.test(s)) || '';
+  const enCoursLabel = states.find((s) => /travail en cours/i.test(s)) || '';
+  const prets = pretLabel ? ch.filter((c) => c.etat === pretLabel).length : 0;
+  const relancer = enCoursLabel ? ch.filter((c) => c.etat === enCoursLabel && docCount(c) === 0).length : 0;
+  const lk = livretKey();
+  const livrets = lk ? ch.filter((c) => (c.documents?.[lk]?.length || 0) > 0).length : 0;
+
+  const stat = (n, label, varName, etat) => {
+    const tag = etat ? 'button' : 'div';
+    const a = etat ? ` type="button" data-etat="${escapeHtml(etat)}" aria-label="${label} : ${n}. Filtrer."` : '';
+    return `<${tag} class="cstat" style="--c:var(${varName})"${a}><span class="cstat__n">${n}</span><span class="cstat__label"><span class="cstat__dot"></span>${label}</span></${tag}>`;
+  };
+
+  wrap.innerHTML = `
+    <div class="cock-hero">
+      <span class="cock-hero__flag" aria-hidden="true"></span>
+      <div class="cock-hero__gauge">
+        ${ringSVG(pct)}
+        <div class="cock-hero__pct"><b>${pct}</b><span>%</span></div>
+      </div>
+      <div class="cock-hero__meta">
+        <span class="cock-hero__eyebrow">Pour la France</span>
+        <span class="cock-hero__label">Avancement du projet</span>
+        <span class="cock-hero__sub">${ch.length} chantier${ch.length > 1 ? 's' : ''} · horizon 2027</span>
+      </div>
+    </div>
+    <div class="cock-stats">
+      ${stat(prets, 'Prêts à sortir', '--s-pret', pretLabel)}
+      ${stat(relancer, 'À relancer', '--soon', '')}
+      ${stat(livrets, livrets > 1 ? 'Livrets disponibles' : 'Livret disponible', '--accent', '')}
+    </div>`;
+
+  const pb = wrap.querySelector('[data-etat]');
+  if (pb) pb.addEventListener('click', () => { state.filters.etats = new Set([pb.dataset.etat]); state.filters.piliers.clear(); syncFilterControls(); render(); });
+}
+function animateRing() {
+  const v = $('#cockpit .ring__val'); if (!v) return;
+  v.style.strokeDashoffset = v.dataset.c;     // vide
+  void v.getBoundingClientRect();             // reflow → déclenche la transition
+  v.style.strokeDashoffset = v.dataset.off;   // remplissage
+}
+
 function renderKpis() {
   const counts = countsByState();
   const total = state.data.chantiers.length;
@@ -168,39 +272,46 @@ function renderKpis() {
 }
 
 /* ---------- Rendu : filtres ---------- */
-function makeChipGroup(label, dim, values, varMap) {
+function makeChipGroup(label, dim, values, varMap, labelFn) {
   const g = el('div', 'fgroup');
   g.append(el('span', 'fgroup__label', { text: label }));
   values.forEach((v) => {
-    const chip = el('button', 'chip', { type: 'button', 'aria-pressed': state.filters[dim].has(v) ? 'true' : 'false' });
+    const chip = el('button', 'chip', { type: 'button', 'data-dim': dim, 'data-val': v, 'aria-pressed': state.filters[dim].has(v) ? 'true' : 'false' });
     if (varMap) setCssVar(chip, varMap[v]);
-    chip.innerHTML = (varMap ? `<span class="chip__dot"></span>` : '') + `<span>${v}</span>`;
+    chip.innerHTML = (varMap ? `<span class="chip__dot"></span>` : '') + `<span>${labelFn ? labelFn(v) : v}</span>`;
     chip.addEventListener('click', () => toggleFilter(dim, v));
     g.append(chip);
   });
   return g;
 }
 function renderFilters() {
+  // Commutateur de vue (Liste | Par pilier)
+  const vt = $('#view-toggle');
+  if (vt) {
+    vt.innerHTML = `<button class="vtoggle__btn" type="button" data-view="liste" aria-pressed="${state.view === 'liste'}">${icon('list', 'ic ic--sm')}<span>Liste</span></button>`
+      + `<button class="vtoggle__btn" type="button" data-view="pilier" aria-pressed="${state.view === 'pilier'}">${icon('columns', 'ic ic--sm')}<span>Par pilier</span></button>`;
+    vt.querySelectorAll('.vtoggle__btn').forEach((b) => b.addEventListener('click', () => setView(b.dataset.view)));
+  }
   const groups = $('#filter-groups'); groups.innerHTML = '';
   groups.append(makeChipGroup('Pilier', 'piliers', PILIERS, PILIER_VAR));
+  const etatVar = Object.fromEntries(getStates().map((s) => [s, stateVar(s)]));
+  groups.append(makeChipGroup('État', 'etats', statesDisplay(), etatVar, etatLabel));
   $('#clear').addEventListener('click', clearFilters);
+  syncFilterControls();
 }
 function toggleFilter(dim, value) {
   const set = state.filters[dim];
   set.has(value) ? set.delete(value) : set.add(value);
-  syncFilterControls(); render();
+  persistUi(); syncFilterControls(); render();
 }
 function clearFilters() {
   state.filters.etats.clear(); state.filters.piliers.clear();
   state.query = ''; $('#search').value = '';
-  syncFilterControls(); render();
+  persistUi(); syncFilterControls(); render();
 }
 function syncFilterControls() {
   $('#kpis').querySelectorAll('.kpi[data-etat]').forEach((k) => k.setAttribute('aria-pressed', state.filters.etats.has(k.dataset.etat) ? 'true' : 'false'));
-  $('#filter-groups').querySelectorAll('.fgroup .chip').forEach((chip) => {
-    const v = chip.querySelector('span:last-child').textContent;
-    chip.setAttribute('aria-pressed', state.filters.piliers.has(v) ? 'true' : 'false');
-  });
+  $('#filter-groups').querySelectorAll('.chip').forEach((chip) => chip.setAttribute('aria-pressed', state.filters[chip.dataset.dim]?.has(chip.dataset.val) ? 'true' : 'false'));
   renderActiveChips();
 }
 function renderActiveChips() {
@@ -231,17 +342,6 @@ function matches(ch) {
     if (!deburr(ch.chantier).includes(q) && !deburr(ch.prochaineEtape).includes(q)) return false;
   }
   return true;
-}
-
-/* ---------- Urgence d'échéance ---------- */
-function echeanceClass(ch) {
-  if (!ch.echeance || ch.etat === 'Annoncé') return '';
-  const d = new Date(ch.echeance); if (Number.isNaN(+d)) return '';
-  const today = new Date(); today.setHours(0, 0, 0, 0);
-  const days = Math.round((d - today) / 86400000);
-  if (days < 0) return 'is-urgent';
-  if (days <= 14) return 'is-soon';
-  return '';
 }
 
 /* ---------- Rail signature ---------- */
@@ -275,13 +375,33 @@ function docCount(ch) {
   return (state.data.docColumns || []).reduce((n, col) => n + (ch.documents?.[col.key]?.length || 0), 0);
 }
 
-/* ---------- Rendu : liste ---------- */
+/* Documents : accès direct au livret (1 clic) si unique + bouton « N docs » -> fenêtre. */
+function docsAffordanceHTML(ch) {
+  const n = docCount(ch);
+  if (n === 0) return '<span class="lmuted">—</span>';
+  const lk = livretKey();
+  const livrets = lk ? (ch.documents?.[lk] || []) : [];
+  let html = '<div class="docsaff">';
+  if (livrets.length === 1) {
+    const d = livrets[0];
+    html += `<button class="docchip" type="button" data-id="${d.id}" data-name="${escapeHtml(d.name)}" data-mime="${d.mime}" aria-label="Télécharger le livret de ${escapeHtml(ch.chantier)}" title="Télécharger le livret">${icon('download', 'ic ic--sm')}<span>Livret</span></button>`;
+  }
+  html += `<button class="docsbtn" type="button" aria-label="Voir les ${n} document(s) de ${escapeHtml(ch.chantier)}">${icon('file', 'ic ic--sm')}<span>${n} doc${n > 1 ? 's' : ''}</span></button>`;
+  return html + '</div>';
+}
+function wireDocsAff(cell, ch) {
+  cell.querySelectorAll('.docchip').forEach((b) => b.addEventListener('click', (e) => { e.stopPropagation(); downloadDoc(b); }));
+  const ds = cell.querySelector('.docsbtn');
+  if (ds) ds.addEventListener('click', (e) => { e.stopPropagation(); openDetail(ch, ds); });
+}
+
+/* ---------- Rendu : dispatcher (liste / par pilier) ---------- */
 function render() {
   const board = $('#board'); board.innerHTML = '';
   let visible = state.data.chantiers.filter(matches);
 
   if (visible.length === 0) {
-    board.classList.add('is-empty');
+    board.classList.add('is-empty'); board.removeAttribute('data-view');
     const filtresActifs = state.filters.etats.size || state.filters.piliers.size || state.query;
     const e = el('div', 'empty');
     if (state.data.chantiers.length === 0) {
@@ -294,18 +414,33 @@ function render() {
     } else {
       e.innerHTML = `<h3>Aucun chantier à afficher</h3><p>Aucun chantier n’est disponible pour le moment.</p>`;
     }
-    board.append(e);
-    announce(0); return;
+    board.append(e); announce(0); return;
   }
   board.classList.remove('is-empty');
-
   const cmp = SORTS[state.sort.key] || SORTS.etat;
   visible = [...visible].sort((a, b) => cmp(a, b) * state.sort.dir);
 
-  const columns = buildColumns();
+  board.dataset.view = state.view;
+  board.append(state.view === 'pilier' ? pilierBoard(visible) : listTable(visible));
+
+  // Stagger d'entrée (plafonné) — purement décoratif, coupé en reduced-motion.
+  let i = 0; board.querySelectorAll('.lrow, .pcard').forEach((r) => r.style.setProperty('--i', Math.min(i++, 12)));
+  announce(visible.length);
+}
+function sortBy(key) {
+  if (state.sort.key === key) state.sort.dir *= -1;
+  else { state.sort.key = key; state.sort.dir = key === 'etat' ? -1 : 1; }
+  persistUi(); render();
+}
+function setView(v) { if (state.view === v) return; state.view = v; persistUi(); syncViewToggle(); render(); }
+function syncViewToggle() {
+  document.querySelectorAll('.vtoggle__btn').forEach((b) => b.setAttribute('aria-pressed', b.dataset.view === state.view ? 'true' : 'false'));
+}
+
+function listTable(visible) {
   const table = el('div', 'list', { role: 'table', 'aria-label': 'Liste des chantiers' });
   const head = el('div', 'list__head', { role: 'row' });
-  columns.forEach((col) => {
+  buildColumns().forEach((col) => {
     const active = state.sort.key === col.key;
     const cls = `lh lcell--${col.key}${active ? ' is-active is-' + (state.sort.dir === 1 ? 'asc' : 'desc') : ''}`;
     const cell = el(col.sortable ? 'button' : 'div', cls, { role: 'columnheader' });
@@ -319,42 +454,70 @@ function render() {
   });
   table.append(head);
   visible.forEach((ch) => table.append(rowEl(ch)));
-  board.append(table);
-  announce(visible.length);
+  return table;
 }
-function sortBy(key) {
-  if (state.sort.key === key) state.sort.dir *= -1;
-  else { state.sort.key = key; state.sort.dir = key === 'etat' ? -1 : 1; } // l'avancement démarre du plus avancé
-  render();
-}
-
 function rowEl(ch) {
   const row = el('div', 'lrow', { role: 'row' });
   const sv = stateVar(ch.etat);
-
   const c1 = el('div', 'lcell lcell--chantier', { role: 'cell' });
-  const aria = `Ouvrir ${ch.chantier} — ${etatLabel(ch.etat)}`;
-  const btn = el('button', 'lrow__open', { type: 'button', 'aria-label': aria });
+  const btn = el('button', 'lrow__open', { type: 'button', 'aria-label': `Ouvrir ${ch.chantier} — ${etatLabel(ch.etat)}` });
   btn.innerHTML = `<span class="lrow__title">${escapeHtml(ch.chantier)}</span><span class="lrow__sub">${ch.pilier ? `<span class="pastille" style="--c:var(${PILIER_VAR[ch.pilier]})">${ch.pilier}</span>` : ''}</span>`;
   c1.append(btn);
-
   const c2 = el('div', 'lcell lcell--etat', { role: 'cell', 'data-label': 'Avancement' });
   c2.innerHTML = `<span class="etatpill" style="--c:var(${sv})"><span class="etatpill__dot"></span>${etatLabel(ch.etat)}</span><span class="rail" style="--c:var(${sv})" aria-hidden="true">${railHTML(ch.etat)}</span>`;
-
-  // Colonne Documents : un bouton (compteur) ouvrant la fenêtre détaillée.
   const c3 = el('div', 'lcell lcell--documents', { role: 'cell', 'data-label': 'Documents' });
-  const n = docCount(ch);
-  if (n === 0) c3.innerHTML = '<span class="lmuted">—</span>';
-  else {
-    const db = el('button', 'docsbtn', { type: 'button', 'aria-label': `Voir les ${n} document(s) de ${ch.chantier}` });
-    db.innerHTML = `${icon('file', 'ic ic--sm')}<span>${n} doc${n > 1 ? 's' : ''}</span>`;
-    db.addEventListener('click', (e) => { e.stopPropagation(); openDetail(ch, db); });
-    c3.append(db);
-  }
-
+  c3.innerHTML = docsAffordanceHTML(ch); wireDocsAff(c3, ch);
   row.append(c1, c2, c3);
   row.addEventListener('click', (e) => { if (e.target.closest('button')) return; openDetail(ch, btn); });
   return row;
+}
+
+/* ---------- Rendu : vue par pilier ---------- */
+function pilierProgress(items) {
+  const L = getStates().length; const known = items.filter((c) => stIdx(c.etat) >= 0);
+  if (!known.length || L < 2) return 0;
+  return Math.round(known.reduce((s, c) => s + stIdx(c.etat), 0) / ((L - 1) * known.length) * 100);
+}
+function miniRing(pct) {
+  const r = 13, C = 2 * Math.PI * r, off = C * (1 - pct / 100);
+  return `<svg class="ring ring--mini" viewBox="0 0 32 32" aria-hidden="true"><circle class="ring__track" cx="16" cy="16" r="${r}"/><circle class="ring__val" cx="16" cy="16" r="${r}" stroke-dasharray="${C.toFixed(1)}" stroke-dashoffset="${off.toFixed(1)}"/></svg>`;
+}
+function chantierCard(ch) {
+  const sv = stateVar(ch.etat);
+  const card = el('article', 'pcard', { role: 'listitem' });
+  const btn = el('button', 'pcard__open', { type: 'button', 'aria-label': `Ouvrir ${ch.chantier} — ${etatLabel(ch.etat)}` });
+  btn.innerHTML = `<span class="pcard__title">${escapeHtml(ch.chantier)}</span>`;
+  card.append(btn);
+  const meta = el('div', 'pcard__meta');
+  meta.innerHTML = `<span class="etatpill" style="--c:var(${sv})"><span class="etatpill__dot"></span>${etatLabel(ch.etat)}</span>`;
+  card.append(meta);
+  const rail = el('div', 'rail', { 'aria-hidden': 'true' }); setCssVar(rail, sv); rail.innerHTML = railHTML(ch.etat);
+  card.append(rail);
+  const docs = el('div', 'pcard__docs'); docs.innerHTML = docsAffordanceHTML(ch); wireDocsAff(docs, ch);
+  card.append(docs);
+  card.addEventListener('click', (e) => { if (e.target.closest('button')) return; openDetail(ch, btn); });
+  return card;
+}
+function pilierBoard(visible) {
+  const wrap = el('div', 'pboard');
+  const cols = [...PILIERS];
+  const orphans = visible.filter((c) => !PILIERS.includes(c.pilier));
+  if (orphans.length) cols.push('Transversal');
+  cols.forEach((p) => {
+    const items = p === 'Transversal' ? orphans : visible.filter((c) => c.pilier === p);
+    const col = el('section', 'pcol', { 'aria-label': `Pilier ${p}` });
+    setCssVar(col, PILIER_VAR[p] || '--ink-3');
+    const head = el('header', 'pcol__head');
+    head.innerHTML = `<span class="pcol__dot"></span><span class="pcol__name">${p}</span>`
+      + `<span class="pcol__ring" title="Avancement moyen">${miniRing(pilierProgress(items))}</span>`
+      + `<span class="pcol__count">${items.length}</span>`;
+    col.append(head);
+    const body = el('div', 'pcol__body', { role: 'list', 'aria-label': `Chantiers — ${p}` });
+    if (!items.length) body.append(el('p', 'col__empty', { text: '—' }));
+    else items.forEach((ch) => body.append(chantierCard(ch)));
+    col.append(body); wrap.append(col);
+  });
+  return wrap;
 }
 function announce(n) {
   $('#result-status').textContent = `${n} chantier${n > 1 ? 's' : ''} affiché${n > 1 ? 's' : ''}.`;
@@ -368,6 +531,9 @@ function row(dt, dd, cls) { return `<dt>${dt}</dt><dd class="${cls || ''}">${dd}
 function openDetail(ch, trigger) {
   state.lastFocus = trigger;
   const docs = renderDocs(ch);
+  const idx = stIdx(ch.etat), L = getStates().length;
+  const etape = idx >= 0 ? `<span class="detail__step">Étape ${idx + 1} sur ${L}</span>` : '';
+  detail.style.setProperty('--c', `var(${ch.pilier ? PILIER_VAR[ch.pilier] : stateVar(ch.etat)})`);
   detail.innerHTML = `
     <div class="detail__head">
       <div class="detail__heading">
@@ -380,7 +546,7 @@ function openDetail(ch, trigger) {
     </div>
     <div class="detail__body">
       <div>
-        <div class="dsection__label">État d’avancement — ${etatLabel(ch.etat)}</div>
+        <div class="dsection__head"><div class="dsection__label">État d’avancement — ${etatLabel(ch.etat)}</div>${etape}</div>
         <div class="rail detail__rail" style="--c:var(${stateVar(ch.etat)})" aria-hidden="true">${railHTML(ch.etat)}</div>
       </div>
       ${ch.dateAnnonce ? `<dl class="dgrid">${row('Date d’annonce', fmtDate(ch.dateAnnonce))}</dl>` : ''}
@@ -526,16 +692,23 @@ $('#refresh').addEventListener('click', async (e) => {
     state.manifest = await res.json();
     state.key = await deriveKey(state.pw, b64ToBytes(state.manifest.salt), state.manifest.kdf.iterations);
     await loadData();
-    renderUpdated(); renderKpis(); syncFilterControls(); render();
-  } catch (err) { /* on garde l'affichage courant */ }
+    renderUpdated(); renderCockpit(); renderKpis(); renderFilters(); syncFilterControls(); render();
+  } catch (err) { showDataBanner(); }
   finally { btn.classList.remove('is-spinning'); btn.disabled = false; }
 });
 $('#lock').addEventListener('click', lock);
 function lock() {
   state.key = null; state.pw = null; state.data = null;
+  clearUi();
   document.body.dataset.state = 'locked';
   app.hidden = true; gate.hidden = false; gate.style.display = '';
   pwInput.value = ''; gateError.hidden = true; pwInput.focus();
+}
+function showDataBanner() {
+  const b = $('#databanner'); if (!b) return;
+  b.textContent = 'Données momentanément indisponibles — affichage de la dernière version.';
+  b.hidden = false;
+  clearTimeout(b._t); b._t = setTimeout(() => { b.hidden = true; }, 6000);
 }
 $('#home').addEventListener('click', (e) => { e.preventDefault(); clearFilters(); window.scrollTo({ top: 0 }); });
 
