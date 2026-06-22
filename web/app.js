@@ -142,7 +142,7 @@ gateForm.addEventListener('submit', async (e) => {
     pwInput.select();
   } finally {
     unlockBtn.classList.remove('is-loading'); unlockBtn.disabled = false;
-    setUnlockLabel('Accéder au cockpit');
+    setUnlockLabel('Accéder au tableau de bord');
   }
 });
 
